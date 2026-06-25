@@ -1,8 +1,16 @@
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { prompt, systemPrompt } = req.body
+  const { prompt, systemPrompt, pdfBase64 } = req.body
   if (!prompt) return res.status(400).json({ error: 'Missing prompt' })
+
+  // Costruisci il contenuto del messaggio (con o senza PDF)
+  const userContent = pdfBase64
+    ? [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+        { type: 'text', text: prompt }
+      ]
+    : prompt
 
   // Prova Claude prima
   try {
@@ -17,7 +25,7 @@ export default async function handler(req, res) {
         model: 'claude-sonnet-4-6',
         max_tokens: 1024,
         system: systemPrompt || 'Sei un assistente professionale.',
-        messages: [{ role: 'user', content: prompt }]
+        messages: [{ role: 'user', content: userContent }]
       })
     })
     if (response.ok) {
@@ -28,15 +36,16 @@ export default async function handler(req, res) {
     console.error('Claude error:', e)
   }
 
-  // Fallback Gemini
+  // Fallback Gemini (solo testo, senza PDF)
   try {
+    const textPrompt = (systemPrompt ? systemPrompt + '\n\n' : '') + prompt
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: (systemPrompt ? systemPrompt + '\n\n' : '') + prompt }] }]
+          contents: [{ parts: [{ text: textPrompt }] }]
         })
       }
     )
