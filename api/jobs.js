@@ -13,7 +13,6 @@ export default async function handler(req, res) {
       app_key: appKey,
       results_per_page: '10',
       what: query,
-      content_type: 'application/json',
     })
 
     if (location) params.append('where', location)
@@ -22,12 +21,14 @@ export default async function handler(req, res) {
     const url = `https://api.adzuna.com/v1/api/jobs/it/search/${page}?${params.toString()}`
     console.log('Adzuna URL:', url)
 
-    const response = await fetch(url)
+    const response = await fetch(url, {
+      headers: { 'Content-Type': 'application/json' }
+    })
     const text = await response.text()
 
     if (!response.ok) {
-      console.error('Adzuna error:', text)
-      return res.status(502).json({ error: 'Errore Adzuna', detail: text.substring(0, 200) })
+      console.error('Adzuna error:', text.substring(0, 300))
+      return res.status(502).json({ error: 'Errore Adzuna', status: response.status })
     }
 
     const data = JSON.parse(text)
