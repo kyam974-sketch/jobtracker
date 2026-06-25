@@ -8,8 +8,8 @@ export default function MailPage() {
   const [profile, setProfile] = useState(null)
   const [applications, setApplications] = useState([])
   const [selectedApp, setSelectedApp] = useState(null)
-  const [tipo, setTipo] = useState('candidatura') // candidatura | followup | spontanea
-  const [destinatario, setDestinatario] = useState({ nome: '', email: '', azienda: '', ruolo: '' })
+  const [tipo, setTipo] = useState('candidatura')
+  const [destinatario, setDestinatario] = useState({ nome: '', email: '', azienda: '', ruolo: '', testo_annuncio: '' })
   const [generating, setGenerating] = useState(false)
   const [mailText, setMailText] = useState('')
   const [copied, setCopied] = useState(false)
@@ -43,25 +43,29 @@ Portfolio: ${profile.portfolio_url || 'non specificato'}
 Note: ${profile.note_profilo || ''}
     `.trim() : ''
 
+    const contestoAzienda = destinatario.testo_annuncio
+      ? `\n\nTesto annuncio / informazioni sull'azienda:\n${destinatario.testo_annuncio}`
+      : ''
+
     const prompts = {
       candidatura: `Scrivi una mail di candidatura professionale in italiano.
 Mittente: ${profiloTesto}
 Destinatario: ${destinatario.nome ? 'Attenzione ' + destinatario.nome : 'Ufficio Risorse Umane'}, azienda ${destinatario.azienda}${destinatario.ruolo ? ', per la posizione: ' + destinatario.ruolo : ''}.
-${destinatario.email ? 'Email: ' + destinatario.email : ''}
-La mail deve essere professionale, personalizzata per il settore/ruolo, concisa (max 200 parole), con oggetto incluso.
-Includi un riferimento al portfolio se disponibile.`,
+${destinatario.email ? 'Email: ' + destinatario.email : ''}${contestoAzienda}
+La mail deve essere professionale, personalizzata per il settore/ruolo e per la specifica azienda, concisa (max 200 parole), con oggetto incluso.
+Includi un riferimento al portfolio se disponibile. Adatta tono e contenuto alle caratteristiche dell'azienda se disponibili.`,
 
       followup: `Scrivi una mail di follow-up/sollecito professionale in italiano.
 Mittente: ${profiloTesto}
-Azienda: ${destinatario.azienda}${destinatario.ruolo ? ', posizione: ' + destinatario.ruolo : ''}
+Azienda: ${destinatario.azienda}${destinatario.ruolo ? ', posizione: ' + destinatario.ruolo : ''}${contestoAzienda}
 Contesto: candidatura già inviata, nessuna risposta ricevuta.
 La mail deve essere cortese, breve (max 100 parole), con oggetto incluso.`,
 
       spontanea: `Scrivi una mail di candidatura spontanea professionale in italiano.
 Mittente: ${profiloTesto}
 Azienda: ${destinatario.azienda}
-${destinatario.nome ? 'Referente: ' + destinatario.nome : ''}
-La mail deve esprimere interesse genuino per l'azienda, presentare brevemente il profilo, proporre un colloquio conoscitivo. Max 180 parole. Includi oggetto.`
+${destinatario.nome ? 'Referente: ' + destinatario.nome : ''}${contestoAzienda}
+La mail deve esprimere interesse genuino per l'azienda (usa le info disponibili per personalizzare), presentare brevemente il profilo, proporre un colloquio conoscitivo. Max 180 parole. Includi oggetto.`
     }
 
     const systemPrompt = `Sei un esperto di comunicazione professionale e ricerca lavoro. 
@@ -113,7 +117,7 @@ Rispondi SOLO con il testo della mail (oggetto + corpo), senza spiegazioni aggiu
             onChange={e => {
               const app = applications.find(a => a.id === e.target.value)
               if (app) handleSelectApp(app)
-              else { setSelectedApp(null) }
+              else setSelectedApp(null)
             }}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
@@ -157,6 +161,16 @@ Rispondi SOLO con il testo della mail (oggetto + corpo), senza spiegazioni aggiu
             onChange={e => setDestinatario(d => ({...d, email: e.target.value}))}
             placeholder="hr@azienda.it"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">
+            Testo annuncio / note sull'azienda <span className="text-gray-400">(opzionale)</span>
+          </label>
+          <textarea value={destinatario.testo_annuncio}
+            onChange={e => setDestinatario(d => ({...d, testo_annuncio: e.target.value}))}
+            placeholder="Incolla il testo dell'offerta o aggiungi note sull'azienda. La mail verrà adattata di conseguenza."
+            rows={4}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
         </div>
       </div>
 
