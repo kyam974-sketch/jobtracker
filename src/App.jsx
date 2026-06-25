@@ -4,11 +4,13 @@ import AuthPage from './pages/AuthPage'
 import ProfilePage from './pages/ProfilePage'
 import ApplicationsPage from './pages/ApplicationsPage'
 import MailPage from './pages/MailPage'
+import CVPage from './pages/CVPage'
 import { supabase } from './lib/supabase'
 
 const NAV = [
   { id: 'candidature', label: 'Candidature', icon: '📋' },
   { id: 'mail', label: 'Mail', icon: '✉️' },
+  { id: 'cv', label: 'CV', icon: '📄' },
   { id: 'profilo', label: 'Profilo', icon: '👤' },
 ]
 
@@ -39,6 +41,7 @@ function AppContent() {
       <div className="pb-20">
         {page === 'candidature' && <ApplicationsPage />}
         {page === 'mail' && <MailPage />}
+        {page === 'cv' && <CVPage />}
         {page === 'profilo' && <ProfilePage embedded />}
       </div>
 
