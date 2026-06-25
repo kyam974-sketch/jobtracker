@@ -3,10 +3,12 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import AuthPage from './pages/AuthPage'
 import ProfilePage from './pages/ProfilePage'
 import ApplicationsPage from './pages/ApplicationsPage'
+import MailPage from './pages/MailPage'
 import { supabase } from './lib/supabase'
 
 const NAV = [
   { id: 'candidature', label: 'Candidature', icon: '📋' },
+  { id: 'mail', label: 'Mail', icon: '✉️' },
   { id: 'profilo', label: 'Profilo', icon: '👤' },
 ]
 
@@ -24,7 +26,6 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-white border-b border-gray-200 px-4 py-4 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-2">
           <span className="text-xl">💼</span>
@@ -35,22 +36,16 @@ function AppContent() {
         </button>
       </div>
 
-      {/* Content */}
       <div className="pb-20">
         {page === 'candidature' && <ApplicationsPage />}
+        {page === 'mail' && <MailPage />}
         {page === 'profilo' && <ProfilePage embedded />}
       </div>
 
-      {/* Bottom nav */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex z-30">
         {NAV.map(n => (
-          <button
-            key={n.id}
-            onClick={() => setPage(n.id)}
-            className={`flex-1 py-3 flex flex-col items-center gap-1 transition-colors ${
-              page === n.id ? 'text-blue-600' : 'text-gray-400'
-            }`}
-          >
+          <button key={n.id} onClick={() => setPage(n.id)}
+            className={`flex-1 py-3 flex flex-col items-center gap-1 transition-colors ${page === n.id ? 'text-blue-600' : 'text-gray-400'}`}>
             <span className="text-xl">{n.icon}</span>
             <span className="text-xs font-medium">{n.label}</span>
           </button>
