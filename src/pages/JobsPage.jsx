@@ -19,13 +19,31 @@ const RISK_LABELS = {
   5: '🔴 Evitare',
 }
 
+const ANALYSIS_PROMPT = (jobText, isDeep) => `Analizza questa offerta di lavoro e restituisci SOLO un JSON valido con questa struttura:
+{
+  "qualita": <numero 1-5 dove 1=ottima, 5=pessima>,
+  "truffa": <numero 1-5 dove 1=affidabile, 5=probabile truffa>,
+  "note": "<2-3 righe di commento sintetico>"
+}
+
+Criteri obbligatori da valutare:
+- Presenza/assenza di RAL o range salariale (obbligatorio per legge - direttiva EU trasparenza retributiva): assenza abbassa qualità
+- Presenza/assenza di tipo di contratto (indeterminato, determinato, ecc.): assenza abbassa qualità  
+- Frasi come "stipendio in base alle capacità" o "retribuzione da definire" sono segnali negativi espliciti
+- Descrizione troncata o vaga abbassa la qualità
+- Segnali di truffa: richiesta di denaro, stipendi irrealistici, azienda non identificabile
+${isDeep ? '- Questa è un\'analisi APPROFONDITA sul testo completo dell\'offerta: valuta con la massima precisione.' : '- ATTENZIONE: questa è un\'analisi RAPIDA su un\'anteprima parziale. Segnala nella nota se il testo sembra incompleto.'}
+
+Offerta:
+${jobText}`
+
 export default function JobsPage() {
   const { user } = useAuth()
   const [profile, setProfile] = useState(null)
   const [jobs, setJobs] = useState([])
   const [loading, setLoading] = useState(false)
-  const [analyzing, setAnalyzing] = useState(null) // id del job in analisi
-  const [scores, setScores] = useState({}) // { jobId: { qualita, truffa, note } }
+  const [analyzing, setAnalyzing] = useState(null)
+  const [scores, setScores] = useState({})
   const [detail, setDetail] = useState(null)
   const [query, setQuery] = useState('')
   const [location, setLocation] = useState('')
@@ -69,31 +87,38 @@ export default function JobsPage() {
     setLoading(false)
   }
 
-  const analyzeJob = async (job) => {
-    setAnalyzing(job.id)
-    const prompt = `Analizza questa offerta di lavoro e restituisci SOLO un JSON valido con questa struttura:
-{
-  "qualita": <numero 1-5 dove 1=ottima, 5=pessima>,
-  "truffa": <numero 1-5 dove 1=affidabile, 5=probabile truffa>,
-  "note": "<2-3 righe di commento sintetico>"
-}
+  const analyzeJob = async (job, deep = false) => {
+    setAnalyzing(job.id + (deep ? '_deep' : '_quick'))
+    
+    let jobText = `Titolo: ${job.title}\nAzienda: ${job.company?.display_name || 'non specificata'}\nSede: ${job.location?.display_name || ''}\nStipendio: ${job.salary_min ? job.salary_min + '-' + job.salary_max + ' EUR' : 'non specificato'}\nDescrizione: ${job.description}`
 
-Offerta:
-Titolo: ${job.title}
-Azienda: ${job.company?.display_name || 'non specificata'}
-Descrizione: ${job.description}
-Stipendio: ${job.salary_min ? job.salary_min + '-' + job.salary_max + ' EUR' : 'non specificato'}
-Sede: ${job.location?.display_name || ''}
-
-Valuta: pertinenza, chiarezza dell'offerta, segnali di truffa (richiesta denaro, stipendi irrealistici, descrizione vaga).`
+    if (deep) {
+      try {
+        const fetchRes = await fetch('/api/fetch-job', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: job.redirect_url })
+        })
+        const fetchData = await fetchRes.json()
+        if (fetchData.text) {
+          jobText = `Titolo: ${job.title}\nAzienda: ${job.company?.display_name || 'non specificata'}\nSede: ${job.location?.display_name || ''}\n\nTesto completo offerta:\n${fetchData.text}`
+        }
+      } catch (e) {
+        console.error('Fetch job failed:', e)
+        // fallback all'anteprima
+      }
+    }
 
     try {
-      const result = await callAI(prompt, 'Sei un esperto di selezione del personale. Rispondi SOLO con JSON valido, senza markdown.')
+      const result = await callAI(
+        ANALYSIS_PROMPT(jobText, deep),
+        'Sei un esperto di selezione del personale e diritto del lavoro italiano. Rispondi SOLO con JSON valido, senza markdown.'
+      )
       const clean = result.replace(/```json|```/g, '').trim()
       const parsed = JSON.parse(clean)
-      setScores(s => ({ ...s, [job.id]: parsed }))
+      setScores(s => ({ ...s, [job.id]: { ...parsed, deep } }))
     } catch (e) {
-      setScores(s => ({ ...s, [job.id]: { qualita: 3, truffa: 3, note: 'Analisi non disponibile.' } }))
+      setScores(s => ({ ...s, [job.id]: { qualita: 3, truffa: 3, note: 'Analisi non disponibile.', deep } }))
     }
     setAnalyzing(null)
   }
@@ -139,11 +164,12 @@ Valuta: pertinenza, chiarezza dell'offerta, segnali di truffa (richiesta denaro,
     </div>
   )
 
+  const isAnalyzing = (jobId, type) => analyzing === jobId + (type === 'deep' ? '_deep' : '_quick')
+
   return (
     <div className="px-4 pt-4 pb-12">
       <h2 className="text-xl font-bold text-gray-900 mb-4">Cerca offerte</h2>
 
-      {/* Ricerca */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4 space-y-3">
         <div>
           <label className="block text-xs text-gray-500 mb-1">Ruolo / parole chiave</label>
@@ -171,7 +197,6 @@ Valuta: pertinenza, chiarezza dell'offerta, segnali di truffa (richiesta denaro,
         </div>
       )}
 
-      {/* Risultati */}
       {totalCount > 0 && (
         <div className="text-xs text-gray-500 mb-3">{totalCount} offerte trovate — pagina {page}</div>
       )}
@@ -194,9 +219,13 @@ Valuta: pertinenza, chiarezza dell'offerta, segnali di truffa (richiesta denaro,
                 )}
               </div>
 
-              {/* Score bars se analizzato */}
               {score && (
                 <div className="space-y-1 mb-3 bg-gray-50 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-gray-400">
+                      {score.deep ? '🔍 Analisi approfondita' : '⚡ Analisi rapida'}
+                    </span>
+                  </div>
                   <ScoreBar score={score.qualita} label="Qualità" />
                   <ScoreBar score={score.truffa} label="Rischio" />
                   <div className="text-xs text-gray-500 mt-1">{RISK_LABELS[score.truffa]}</div>
@@ -204,16 +233,30 @@ Valuta: pertinenza, chiarezza dell'offerta, segnali di truffa (richiesta denaro,
                 </div>
               )}
 
-              {/* Azioni */}
               <div className="flex gap-2 flex-wrap">
                 <button onClick={() => setDetail(job)}
                   className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium">
                   Dettagli
                 </button>
                 {!score && (
-                  <button onClick={() => analyzeJob(job)} disabled={analyzing === job.id}
-                    className="px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg text-xs font-medium">
-                    {analyzing === job.id ? '⏳ Analisi...' : '✨ Analizza'}
+                  <>
+                    <button onClick={() => analyzeJob(job, false)}
+                      disabled={!!analyzing}
+                      className="px-3 py-1.5 bg-yellow-50 text-yellow-700 rounded-lg text-xs font-medium disabled:opacity-50">
+                      {isAnalyzing(job.id, 'quick') ? '⏳...' : '⚡ Rapida'}
+                    </button>
+                    <button onClick={() => analyzeJob(job, true)}
+                      disabled={!!analyzing}
+                      className="px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg text-xs font-medium disabled:opacity-50">
+                      {isAnalyzing(job.id, 'deep') ? '⏳...' : '🔍 Approfondita'}
+                    </button>
+                  </>
+                )}
+                {score && !score.deep && (
+                  <button onClick={() => analyzeJob(job, true)}
+                    disabled={!!analyzing}
+                    className="px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg text-xs font-medium disabled:opacity-50">
+                    {isAnalyzing(job.id, 'deep') ? '⏳...' : '🔍 Approfondisci'}
                   </button>
                 )}
                 <button onClick={() => addToApplications(job)}
@@ -234,7 +277,6 @@ Valuta: pertinenza, chiarezza dell'offerta, segnali di truffa (richiesta denaro,
         })}
       </div>
 
-      {/* Paginazione */}
       {jobs.length > 0 && (
         <div className="flex gap-3 mt-4 justify-center">
           {page > 1 && (
@@ -252,7 +294,6 @@ Valuta: pertinenza, chiarezza dell'offerta, segnali di truffa (richiesta denaro,
         </div>
       )}
 
-      {/* Detail modale */}
       {detail && (
         <div className="fixed inset-0 bg-black/50 z-40 flex items-end" onClick={() => setDetail(null)}>
           <div className="bg-white w-full rounded-t-2xl p-6 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
