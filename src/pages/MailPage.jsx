@@ -54,6 +54,7 @@ export default function MailPage() {
     setSaved(false)
 
     const nome = (profile?.nome || '') + ' ' + (profile?.cognome || '')
+    const esperienza = profile?.cv_testo ? '\n\nEsperienze dal CV:\n' + profile.cv_testo.substring(0, 1500) : ''
     const profiloTesto = profile ? `
 Mittente: ${nome.trim()}
 Telefono: ${profile.telefono || ''}
@@ -83,19 +84,19 @@ REGOLE RIGIDE:
 ${profiloTesto}
 Destinatario: ${destinatario.nome ? destinatario.nome + ', ' : ''}${destinatario.azienda}${destinatario.ruolo ? ', posizione: ' + destinatario.ruolo : ''}${contestoAzienda}
 
-La mail deve presentare il profilo in modo diretto, senza adulazione. Evidenzia 1-2 elementi concreti del profilo rilevanti per il ruolo/azienda. Proponi un colloquio.`,
+La mail deve presentare il profilo in modo diretto, senza adulazione. Evidenzia 1-2 elementi concreti del profilo (incluse le esperienze reali se disponibili) rilevanti per il ruolo/azienda. Proponi un colloquio.${esperienza}`,
 
       followup: `Scrivi una mail di follow-up in italiano per:
 ${profiloTesto}
 Azienda: ${destinatario.azienda}${destinatario.ruolo ? ', posizione: ' + destinatario.ruolo : ''}
 
-Candidatura già inviata, nessuna risposta. Mail breve (max 60 parole nel corpo), diretta, senza pressione eccessiva.`,
+Candidatura già inviata, nessuna risposta. Mail breve (max 60 parole nel corpo), diretta, senza pressione eccessiva.${esperienza}`,
 
       spontanea: `Scrivi una mail di candidatura spontanea in italiano per:
 ${profiloTesto}
 Azienda: ${destinatario.azienda}${destinatario.nome ? ', referente: ' + destinatario.nome : ''}${contestoAzienda}
 
-Presenta il profilo in modo conciso, spiega perché questa azienda specifica (usa le info disponibili, ma non essere servile). Proponi un colloquio conoscitivo.`
+Presenta il profilo in modo conciso, spiega perché questa azienda specifica (usa le info disponibili, ma non essere servile). Proponi un colloquio conoscitivo.${esperienza}`
     }
 
     try {
@@ -152,8 +153,8 @@ Presenta il profilo in modo conciso, spiega perché questa azienda specifica (us
           <select value={selectedApp?.id || ''}
             onChange={e => {
               const app = applications.find(a => a.id === e.target.value)
-              if (app) handleSelectApp(app)
-              else { setSelectedApp(null); setDestinatario(d => ({...d, azienda: '', ruolo: '', testo_annuncio: ''})) }
+              if (app) { setDestinatario(d => ({...d, testo_annuncio: ''})); handleSelectApp(app) }
+              else { setSelectedApp(null); setDestinatario({nome: '', email: '', azienda: '', ruolo: '', testo_annuncio: ''}) }
             }}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
             <option value="">-- Nessuna --</option>

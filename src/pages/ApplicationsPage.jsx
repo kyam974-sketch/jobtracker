@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 
-const STATI = ['bozza', 'inviata', 'nessuna risposta', 'risposta', 'rifiuto', 'colloquio']
+const STATI = ['bozza', 'inviata', 'in attesa', 'risposta', 'rifiuto', 'colloquio']
 const CANALI = ['email', 'form', 'DM social', 'spontanea', 'agenzia']
 
 const STATO_COLORS = {
@@ -156,6 +156,13 @@ export default function ApplicationsPage() {
         ))}
       </div>
 
+
+      {/* Legenda stati */}
+      <div className="mx-4 mb-3 bg-gray-50 rounded-xl p-3 text-xs text-gray-500 space-y-0.5">
+        <div><span className="font-medium text-gray-700">bozza</span> — da inviare · <span className="font-medium text-gray-700">inviata</span> — spedita, attendo risposta</div>
+        <div><span className="font-medium text-gray-700">in attesa</span> — ho sollecitato, nessuna risposta · <span className="font-medium text-gray-700">risposta</span> — mi hanno risposto</div>
+        <div><span className="font-medium text-gray-700">rifiuto</span> — non selezionata · <span className="font-medium text-gray-700">colloquio</span> — convocata</div>
+      </div>
       {/* Lista candidature */}
       <div className="px-4 mt-4 space-y-3">
         {filtered.length === 0 && (
@@ -272,17 +279,15 @@ export default function ApplicationsPage() {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Data offerta</label>
-                  <input type="date" value={form.data_offerta} onChange={e => setForm(f => ({...f, data_offerta: e.target.value}))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Data invio</label>
-                  <input type="date" value={form.data_invio} onChange={e => setForm(f => ({...f, data_invio: e.target.value}))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
+<div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data offerta</label>
+                <input type="date" value={form.data_offerta} onChange={e => setForm(f => ({...f, data_offerta: e.target.value}))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data invio</label>
+                <input type="date" value={form.data_invio} onChange={e => setForm(f => ({...f, data_invio: e.target.value}))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Prossimo follow-up</label>
