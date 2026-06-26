@@ -25,25 +25,35 @@ function AppContent() {
   const [page, setPage] = useState('dashboard')
 
   if (loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="text-gray-400 text-sm">Caricamento...</div>
+    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--noir)' }}>
+      <div style={{ color: 'var(--violet-light)' }} className="text-sm">Caricamento...</div>
     </div>
   )
 
   if (!user) return <AuthPage />
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-30">
+    <div className="min-h-screen" style={{ background: 'var(--noir)' }}>
+      {/* Header */}
+      <div className="sticky top-0 z-30 px-4 py-3 flex items-center justify-between"
+        style={{ background: 'var(--noir-mid)', borderBottom: '1px solid var(--noir-border)' }}>
         <div className="flex items-center gap-2">
-          <span className="text-xl">💼</span>
-          <h1 className="text-base font-bold text-gray-900">JobTracker</h1>
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center text-sm"
+            style={{ background: 'linear-gradient(135deg, var(--violet), var(--accent))' }}>
+            💼
+          </div>
+          <h1 className="text-base font-bold font-display" style={{ color: 'var(--text-primary)' }}>
+            JobTracker
+          </h1>
         </div>
-        <button onClick={() => supabase.auth.signOut()} className="text-sm text-gray-400 hover:text-gray-600">
+        <button onClick={() => supabase.auth.signOut()}
+          className="text-xs px-3 py-1.5 rounded-lg transition-colors"
+          style={{ color: 'var(--text-muted)', border: '1px solid var(--noir-border)' }}>
           Esci
         </button>
       </div>
 
+      {/* Content */}
       <div className="pb-20">
         {page === 'dashboard' && <DashboardPage onNavigate={setPage} />}
         {page === 'candidature' && <ApplicationsPage />}
@@ -51,15 +61,22 @@ function AppContent() {
         {page === 'aziende' && <CompaniesPage />}
         {page === 'mail' && <MailPage />}
         {page === 'cv' && <CVPage />}
-        {page === 'profilo' && <ProfilePage embedded />}
+        {page === 'profilo' && <ProfilePage />}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex z-30">
+      {/* Bottom nav */}
+      <div className="fixed bottom-0 left-0 right-0 flex z-30"
+        style={{ background: 'var(--noir-mid)', borderTop: '1px solid var(--noir-border)' }}>
         {NAV.map(n => (
           <button key={n.id} onClick={() => setPage(n.id)}
-            className={`flex-1 py-2 flex flex-col items-center gap-0.5 transition-colors ${page === n.id ? 'text-blue-600' : 'text-gray-400'}`}>
+            className="flex-1 py-2.5 flex flex-col items-center gap-0.5 transition-all"
+            style={{ color: page === n.id ? 'var(--accent)' : 'var(--text-muted)' }}>
             <span className="text-base">{n.icon}</span>
-            <span style={{fontSize: '9px'}} className="font-medium">{n.label}</span>
+            <span style={{ fontSize: '9px' }} className="font-medium">{n.label}</span>
+            {page === n.id && (
+              <div className="absolute bottom-0 w-8 h-0.5 rounded-full"
+                style={{ background: 'var(--accent)' }} />
+            )}
           </button>
         ))}
       </div>
