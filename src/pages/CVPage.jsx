@@ -133,14 +133,24 @@ export default function CVPage() {
     setResult('')
 
     const prompts = {
-      migliora: `Analizza questo CV e riscrivi una versione migliorata completa.
-Prima dai 2-3 punti critici rapidi, poi scrivi il CV COMPLETO RISCRITTO con:
-- Struttura chiara con sezioni in maiuscolo (ESPERIENZA LAVORATIVA, FORMAZIONE, COMPETENZE, ecc.)
-- Esperienze con risultati concreti dove possibile
-- Rimozione di voci banali o ridondanti
-- Linguaggio professionale ma autentico
+      migliora: `Riscrivi questo CV in modo professionale. Restituisci SOLO il CV completo riscritto, senza commenti, senza analisi, senza intestazioni come 'CV RISCRITTO'. Inizia direttamente con il nome della persona.
+
+Linee guida:
+- Struttura con sezioni in MAIUSCOLO (ESPERIENZA LAVORATIVA, FORMAZIONE, COMPETENZE, LINGUE)
+- Profilo professionale sintetico e concreto in apertura
+- Esperienze con risultati/numeri dove possibile
+- Rimuovi voci banali o ridondanti
+- Linguaggio diretto e professionale
 
 CV originale:
+${selectedVersion.testo}`,
+
+      analizza: `Analizza questo CV e fornisci feedback dettagliato:
+1. PUNTI DI FORZA (2-3 elementi)
+2. PUNTI DA MIGLIORARE (specifici, con esempi concreti)
+3. SUGGERIMENTI PRATICI (cosa aggiungere, cosa togliere, come riformulare)
+
+CV:
 ${selectedVersion.testo}`,
 
       aggiorna: `Integra queste nuove esperienze nel CV esistente e restituisci il CV COMPLETO aggiornato.
@@ -165,7 +175,8 @@ ${offertaTesto}`
     try {
       const res = await callAI(prompts[mode], 'Sei un esperto di career coaching. Scrivi CV professionali in italiano. Nelle sezioni usa titoli in MAIUSCOLO.')
       setResult(res)
-      setSavingName(mode === 'migliora' ? `CV migliorato ${new Date().toLocaleDateString('it-IT')}` :
+      setSavingName(mode === 'migliora' ? `CV riscritto ${new Date().toLocaleDateString('it-IT')}` :
+        mode === 'analizza' ? `Analisi CV ${new Date().toLocaleDateString('it-IT')}` :
         mode === 'aggiorna' ? `CV aggiornato ${new Date().toLocaleDateString('it-IT')}` :
         `CV adattato ${new Date().toLocaleDateString('it-IT')}`)
     } catch { setResult('Errore nella generazione. Riprova.') }
@@ -314,7 +325,7 @@ ${offertaTesto}`
             AI — <span className="text-blue-600">{selectedVersion.nome_versione}</span>
           </div>
           <div className="flex rounded-lg bg-gray-100 p-1 mb-4">
-            {[['migliora','✨ Migliora'],['aggiorna','📝 Aggiorna'],['adatta','🎯 Adatta']].map(([id, label]) => (
+            {[['migliora','✨ Riscrivi'],['analizza','🔍 Analizza'],['aggiorna','📝 Aggiorna'],['adatta','🎯 Adatta']].map(([id, label]) => (
               <button key={id} onClick={() => setMode(id)}
                 className={`flex-1 py-2 rounded-md text-xs font-medium transition-all ${mode === id ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
                 {label}
@@ -334,7 +345,7 @@ ${offertaTesto}`
           <button onClick={analyzeCV}
             disabled={analyzing || (mode === 'adatta' && !offertaTesto.trim()) || (mode === 'aggiorna' && !nuoveEsperienze.trim())}
             className="w-full bg-blue-600 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg text-sm">
-            {analyzing ? '⏳ Elaborazione...' : mode === 'migliora' ? '✨ Migliora e riscrivi' : mode === 'aggiorna' ? '📝 Aggiorna CV' : '🎯 Adatta a offerta'}
+            {analyzing ? '⏳ Elaborazione...' : mode === 'migliora' ? '✨ Riscrivi CV' : mode === 'analizza' ? '🔍 Analizza CV' : mode === 'aggiorna' ? '📝 Aggiorna CV' : '🎯 Adatta a offerta'}
           </button>
         </div>
       )}
@@ -344,7 +355,7 @@ ${offertaTesto}`
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
           <div className="text-sm font-medium text-gray-700 mb-3">CV generato</div>
           <div className="text-sm text-gray-700 whitespace-pre-wrap mb-4 max-h-80 overflow-y-auto bg-gray-50 rounded-lg p-3">{result}</div>
-          <div className="flex gap-2 mb-4">
+          {mode !== 'analizza' && <div className="flex gap-2 mb-4">
             <button onClick={() => downloadCV({ testo: result }, 'pdf')} disabled={downloading}
               className="flex-1 bg-red-50 text-red-700 py-2 rounded-lg text-sm font-medium">
               📥 Scarica PDF
@@ -353,7 +364,7 @@ ${offertaTesto}`
               className="flex-1 bg-blue-50 text-blue-700 py-2 rounded-lg text-sm font-medium">
               📥 Scarica Word
             </button>
-          </div>
+          </div>}
           <div className="border-t border-gray-100 pt-4">
             <div className="text-xs text-gray-500 mb-2">Salva come versione</div>
             <div className="flex gap-2">
