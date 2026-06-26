@@ -173,3 +173,11 @@ body { font-size: 15px; }
 .text-sm { font-size: 14px !important; }
 .text-xs { font-size: 12px !important; }
 .text-base { font-size: 15px !important; }
+
+/* Force font override */
+* {
+  font-family: Inter, system-ui, sans-serif !important;
+}
+h1, h2, h3, .font-bold, .font-semibold, .font-display {
+  font-family: "Space Grotesk", Inter, system-ui, sans-serif !important;
+}
