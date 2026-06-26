@@ -11,8 +11,9 @@ export default function CVPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [selectedVersion, setSelectedVersion] = useState(null)
   const [showDetail, setShowDetail] = useState(false)
-  const [mode, setMode] = useState('migliora') // migliora | adatta
+  const [mode, setMode] = useState('migliora')
   const [offertaTesto, setOffertaTesto] = useState('')
+  const [nuoveEsperienze, setNuoveEsperienze] = useState('')
   const [result, setResult] = useState('')
   const [savingName, setSavingName] = useState('')
   const [saving, setSaving] = useState(false)
@@ -22,11 +23,7 @@ export default function CVPage() {
 
   const loadVersions = async () => {
     setLoading(true)
-    const { data } = await supabase
-      .from('cv_versions')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
+    const { data } = await supabase.from('cv_versions').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
     setVersions(data || [])
     setLoading(false)
   }
@@ -38,17 +35,12 @@ export default function CVPage() {
       setMessage({ type: 'error', text: 'Carica un file PDF.' })
       return
     }
-
     setUploading(true)
     setMessage(null)
-
-    // Leggi il PDF come base64
     const reader = new FileReader()
     reader.onload = async (evt) => {
       const base64 = evt.target.result.split(',')[1]
-
       try {
-        // Usa Claude per estrarre il testo dal PDF
         const response = await fetch('/api/ai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -60,19 +52,9 @@ export default function CVPage() {
         })
         const data = await response.json()
         if (data.result) {
-          // Salva automaticamente come "CV caricato [data]"
           const nome = `CV caricato ${new Date().toLocaleDateString('it-IT')}`
-          await supabase.from('cv_versions').insert({
-            user_id: user.id,
-            nome_versione: nome,
-            testo: data.result
-          })
-          // Aggiorna anche il profilo con il testo del CV
-          await supabase.from('profiles').upsert({
-            user_id: user.id,
-            cv_testo: data.result,
-            updated_at: new Date().toISOString()
-          })
+          await supabase.from('cv_versions').insert({ user_id: user.id, nome_versione: nome, testo: data.result })
+          await supabase.from('profiles').upsert({ user_id: user.id, cv_testo: data.result, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
           setMessage({ type: 'success', text: `CV caricato e salvato come "${nome}"` })
           loadVersions()
         }
@@ -89,17 +71,31 @@ export default function CVPage() {
     setAnalyzing(true)
     setResult('')
 
-    const prompts = {
-      migliora: `Analizza questo CV e fornisci suggerimenti concreti per migliorarlo. 
-Indica: punti di forza, punti deboli, cosa aggiungere, cosa eliminare, come riformulare alcune sezioni.
-Sii specifico e pratico, non generico.
+    const systemPrompt = `Sei un esperto di career coaching e selezione del personale. 
+Dai feedback precisi, diretti e utili sui CV. Non essere generico.`
 
-CV:
+    const prompts = {
+      migliora: `Analizza questo CV e fornisci:
+1. PUNTI DI FORZA (2-3 elementi)
+2. PUNTI DA MIGLIORARE (specifici, non generici)
+3. CV RISCRITTO: riscrivi il CV completo migliorandolo — struttura più chiara, esperienze con numeri e risultati dove possibile, rimozione delle parti deboli o banali.
+
+CV originale:
 ${selectedVersion.testo}`,
 
-      adatta: `Adatta questo CV per la seguente offerta di lavoro. 
-Indica quali competenze ed esperienze enfatizzare, cosa aggiungere o modificare per allinearsi meglio all'offerta.
-Fornisci anche una versione riscritta delle sezioni più rilevanti.
+      aggiorna: `Questo è il mio CV attuale. Ho nuove esperienze da aggiungere.
+Integra le nuove esperienze nel CV in modo coerente con il resto, mantenendo lo stile e aggiornando le sezioni pertinenti.
+Restituisci il CV completo aggiornato.
+
+CV attuale:
+${selectedVersion.testo}
+
+Nuove esperienze da aggiungere:
+${nuoveEsperienze}`,
+
+      adatta: `Adatta questo CV per la seguente offerta di lavoro.
+Riscrivi il CV completo enfatizzando le competenze ed esperienze più rilevanti per questa posizione.
+Aggiungi o modifica sezioni per allinearsi meglio all'offerta.
 
 CV originale:
 ${selectedVersion.testo}
@@ -107,9 +103,6 @@ ${selectedVersion.testo}
 Offerta di lavoro:
 ${offertaTesto}`
     }
-
-    const systemPrompt = `Sei un esperto di career coaching e selezione del personale. 
-Dai feedback precisi, diretti e utili sui CV. Non essere generico.`
 
     try {
       const res = await callAI(prompts[mode], systemPrompt)
@@ -123,11 +116,15 @@ Dai feedback precisi, diretti e utili sui CV. Non essere generico.`
   const saveAsNewVersion = async () => {
     if (!result || !savingName.trim()) return
     setSaving(true)
-    await supabase.from('cv_versions').insert({
-      user_id: user.id,
-      nome_versione: savingName.trim(),
-      testo: result
-    })
+    // Estrai solo la parte del CV riscritto dal risultato
+    const cvText = result.includes('CV RISCRITTO') || result.includes('CV completo')
+      ? result
+      : result
+    await supabase.from('cv_versions').insert({ user_id: user.id, nome_versione: savingName.trim(), testo: cvText })
+    // Aggiorna anche il cv_testo nel profilo se è il CV principale
+    if (savingName.toLowerCase().includes('principale') || savingName.toLowerCase().includes('aggiornato')) {
+      await supabase.from('profiles').upsert({ user_id: user.id, cv_testo: cvText, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+    }
     setSaving(false)
     setSavingName('')
     setResult('')
@@ -167,11 +164,7 @@ Dai feedback precisi, diretti e utili sui CV. Non essere generico.`
       </div>
 
       {message && (
-        <div className={`rounded-xl px-4 py-3 text-sm mb-4 ${
-          message.type === 'success'
-            ? 'bg-green-50 border border-green-200 text-green-700'
-            : 'bg-red-50 border border-red-200 text-red-700'
-        }`}>
+        <div className={`rounded-xl px-4 py-3 text-sm mb-4 ${message.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
           {message.text}
         </div>
       )}
@@ -184,17 +177,18 @@ Dai feedback precisi, diretti e utili sui CV. Non essere generico.`
             {versions.map(v => (
               <div key={v.id}
                 onClick={() => { setSelectedVersion(v); setShowDetail(true) }}
-                className={`bg-white rounded-xl border p-4 cursor-pointer transition-colors ${
-                  selectedVersion?.id === v.id ? 'border-blue-400' : 'border-gray-200'
-                }`}>
+                className={`bg-white rounded-xl border p-4 cursor-pointer transition-colors ${selectedVersion?.id === v.id ? 'border-blue-400' : 'border-gray-200'}`}>
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="font-medium text-gray-900 text-sm">{v.nome_versione}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">
-                      {new Date(v.created_at).toLocaleDateString('it-IT')}
-                    </div>
+                    <div className="text-xs text-gray-400 mt-0.5">{new Date(v.created_at).toLocaleDateString('it-IT')}</div>
                   </div>
-                  <span className="text-gray-400 text-lg">›</span>
+                  <div className="flex gap-2">
+                    <button onClick={e => { e.stopPropagation(); setSelectedVersion(v); setShowDetail(false) }}
+                      className={`text-xs px-2 py-1 rounded-lg ${selectedVersion?.id === v.id ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                      {selectedVersion?.id === v.id ? '✓ Selezionato' : 'Seleziona'}
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -203,14 +197,14 @@ Dai feedback precisi, diretti e utili sui CV. Non essere generico.`
       )}
 
       {/* Analisi AI */}
-      {selectedVersion && (
+      {selectedVersion && !showDetail && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
           <div className="text-sm font-medium text-gray-700 mb-3">
-            Analisi AI — <span className="text-blue-600">{selectedVersion.nome_versione}</span>
+            AI — <span className="text-blue-600">{selectedVersion.nome_versione}</span>
           </div>
 
           <div className="flex rounded-lg bg-gray-100 p-1 mb-4">
-            {[['migliora','Migliora CV'],['adatta','Adatta a offerta']].map(([id, label]) => (
+            {[['migliora','✨ Migliora'],['aggiorna','📝 Aggiorna'],['adatta','🎯 Adatta']].map(([id, label]) => (
               <button key={id} onClick={() => setMode(id)}
                 className={`flex-1 py-2 rounded-md text-xs font-medium transition-all ${mode === id ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
                 {label}
@@ -218,46 +212,51 @@ Dai feedback precisi, diretti e utili sui CV. Non essere generico.`
             ))}
           </div>
 
+          {mode === 'aggiorna' && (
+            <div className="mb-3">
+              <label className="block text-xs text-gray-500 mb-1">Descrivi le nuove esperienze da aggiungere</label>
+              <textarea value={nuoveEsperienze} onChange={e => setNuoveEsperienze(e.target.value)}
+                placeholder="es. Da gennaio 2024 lavoro come Beauty Advisor da Douglas. Ho partecipato al corso XYZ..."
+                rows={4}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+            </div>
+          )}
+
           {mode === 'adatta' && (
-            <textarea
-              value={offertaTesto}
-              onChange={e => setOffertaTesto(e.target.value)}
-              placeholder="Incolla il testo dell'offerta di lavoro..."
-              rows={4}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-            />
+            <div className="mb-3">
+              <label className="block text-xs text-gray-500 mb-1">Testo dell'offerta di lavoro</label>
+              <textarea value={offertaTesto} onChange={e => setOffertaTesto(e.target.value)}
+                placeholder="Incolla il testo dell'offerta..."
+                rows={4}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+            </div>
           )}
 
           <button onClick={analyzeCV}
-            disabled={analyzing || (mode === 'adatta' && !offertaTesto.trim())}
+            disabled={analyzing || (mode === 'adatta' && !offertaTesto.trim()) || (mode === 'aggiorna' && !nuoveEsperienze.trim())}
             className="w-full bg-blue-600 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg text-sm transition-colors">
-            {analyzing ? '✨ Analisi in corso...' : '✨ Analizza con AI'}
+            {analyzing ? '✨ Elaborazione in corso...' : mode === 'migliora' ? '✨ Migliora e riscrivi CV' : mode === 'aggiorna' ? '📝 Aggiorna CV' : '🎯 Adatta a offerta'}
           </button>
         </div>
       )}
 
-      {/* Risultato analisi */}
+      {/* Risultato */}
       {result && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
-          <div className="text-sm font-medium text-gray-700 mb-3">Risultato analisi</div>
-          <div className="text-sm text-gray-700 whitespace-pre-wrap mb-4">{result}</div>
-
+          <div className="text-sm font-medium text-gray-700 mb-3">Risultato</div>
+          <div className="text-sm text-gray-700 whitespace-pre-wrap mb-4 max-h-96 overflow-y-auto">{result}</div>
           <div className="border-t border-gray-100 pt-4">
-            <div className="text-xs text-gray-500 mb-2">Salva come nuova versione CV</div>
+            <div className="text-xs text-gray-500 mb-2">Salva come nuova versione</div>
             <div className="flex gap-2">
-              <input
-                type="text"
-                value={savingName}
-                onChange={e => setSavingName(e.target.value)}
-                placeholder="Nome versione..."
-                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button onClick={saveAsNewVersion}
-                disabled={saving || !savingName.trim()}
+              <input type="text" value={savingName} onChange={e => setSavingName(e.target.value)}
+                placeholder="Nome versione (es. CV aggiornato giugno 2026)"
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <button onClick={saveAsNewVersion} disabled={saving || !savingName.trim()}
                 className="bg-blue-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium">
                 {saving ? '...' : 'Salva'}
               </button>
             </div>
+            <div className="text-xs text-gray-400 mt-1">💡 Se il nome contiene "principale" o "aggiornato", verrà usato anche per generare le mail</div>
           </div>
         </div>
       )}
@@ -267,14 +266,12 @@ Dai feedback precisi, diretti e utili sui CV. Non essere generico.`
         <div className="fixed inset-0 bg-black/50 z-40 flex items-end" onClick={() => setShowDetail(false)}>
           <div className="bg-white w-full rounded-t-2xl p-6 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-gray-900 mb-1">{selectedVersion.nome_versione}</h3>
-            <div className="text-xs text-gray-400 mb-4">
-              {new Date(selectedVersion.created_at).toLocaleDateString('it-IT')}
-            </div>
+            <div className="text-xs text-gray-400 mb-4">{new Date(selectedVersion.created_at).toLocaleDateString('it-IT')}</div>
             <div className="text-sm text-gray-700 whitespace-pre-wrap mb-6 bg-gray-50 rounded-lg p-4 max-h-60 overflow-y-auto">
               {selectedVersion.testo}
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setShowDetail(false)}
+              <button onClick={() => { setShowDetail(false) }}
                 className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">
                 Chiudi
               </button>

@@ -10,6 +10,17 @@ const SETTORI = [
   'Istruzione & Formazione', 'Altro',
 ]
 
+const CONTRATTI = [
+  { id: 'full_time', label: 'Full time' },
+  { id: 'part_time', label: 'Part time' },
+  { id: 'freelance', label: 'Freelance' },
+  { id: 'piva_si', label: 'Con P.IVA' },
+  { id: 'piva_no', label: 'Senza P.IVA' },
+  { id: 'determinato', label: 'Tempo determinato' },
+  { id: 'indeterminato', label: 'Tempo indeterminato' },
+  { id: 'stage', label: 'Stage / tirocinio' },
+]
+
 export default function ProfilePage() {
   const { user } = useAuth()
   const [loading, setLoading] = useState(true)
@@ -17,10 +28,11 @@ export default function ProfilePage() {
   const [message, setMessage] = useState(null)
   const [profile, setProfile] = useState({
     nome: '', cognome: '', telefono: '',
-    settore: '', sottosettore: '',
+    settori: [], sottosettore: '',
     citta_target: '', raggio_km: 20,
     lingue: [], portfolio_url: '',
     note_profilo: '', stipendio_desiderato: '',
+    preferenze_contratto: [],
   })
   const [nuovaLingua, setNuovaLingua] = useState('')
 
@@ -33,11 +45,13 @@ export default function ProfilePage() {
       setProfile({
         nome: data.nome || '', cognome: data.cognome || '',
         telefono: data.telefono || '',
-        settore: data.settore || '', sottosettore: data.sottosettore || '',
+        settori: data.settori || (data.settore ? [data.settore] : []),
+        sottosettore: data.sottosettore || '',
         citta_target: data.citta_target || '', raggio_km: data.raggio_km || 20,
         lingue: data.lingue || [], portfolio_url: data.portfolio_url || '',
         note_profilo: data.note_profilo || '',
         stipendio_desiderato: data.stipendio_desiderato || '',
+        preferenze_contratto: data.preferenze_contratto || [],
       })
     }
     setLoading(false)
@@ -48,12 +62,29 @@ export default function ProfilePage() {
     setMessage(null)
     const { error } = await supabase.from('profiles').upsert({
       user_id: user.id, ...profile,
+      settore: profile.settori[0] || '',
       stipendio_desiderato: profile.stipendio_desiderato ? parseInt(profile.stipendio_desiderato) : null,
       updated_at: new Date().toISOString()
     }, { onConflict: 'user_id' })
     if (error) setMessage({ type: 'error', text: 'Errore nel salvataggio: ' + error.message })
     else setMessage({ type: 'success', text: 'Profilo salvato!' })
     setSaving(false)
+  }
+
+  const toggleSettore = (s) => {
+    setProfile(p => ({
+      ...p,
+      settori: p.settori.includes(s) ? p.settori.filter(x => x !== s) : [...p.settori, s]
+    }))
+  }
+
+  const toggleContratto = (id) => {
+    setProfile(p => ({
+      ...p,
+      preferenze_contratto: p.preferenze_contratto.includes(id)
+        ? p.preferenze_contratto.filter(x => x !== id)
+        : [...p.preferenze_contratto, id]
+    }))
   }
 
   const addLingua = () => {
@@ -100,14 +131,21 @@ export default function ProfilePage() {
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
 
-        {/* Settore */}
+        {/* Settori multi-selezione */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Settore</label>
-          <select value={profile.settore} onChange={e => setProfile(p => ({...p, settore: e.target.value}))}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <option value="">Seleziona settore</option>
-            {SETTORI.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Settori <span className="text-gray-400 font-normal">(seleziona tutti quelli rilevanti)</span></label>
+          <div className="flex flex-wrap gap-2">
+            {SETTORI.map(s => (
+              <button key={s} onClick={() => toggleSettore(s)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  profile.settori.includes(s)
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}>
+                {s}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Specializzazione */}
@@ -116,6 +154,23 @@ export default function ProfilePage() {
           <input type="text" value={profile.sottosettore} onChange={e => setProfile(p => ({...p, sottosettore: e.target.value}))}
             placeholder="es. MUA freelance, Retail beauty, Teatro..."
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+
+        {/* Preferenze contratto */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Tipo di contratto preferito</label>
+          <div className="flex flex-wrap gap-2">
+            {CONTRATTI.map(c => (
+              <button key={c.id} onClick={() => toggleContratto(c.id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  profile.preferenze_contratto.includes(c.id)
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}>
+                {c.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Città e raggio */}

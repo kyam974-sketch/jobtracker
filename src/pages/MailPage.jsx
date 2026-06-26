@@ -9,7 +9,7 @@ export default function MailPage() {
   const [applications, setApplications] = useState([])
   const [selectedApp, setSelectedApp] = useState(null)
   const [tipo, setTipo] = useState('candidatura')
-  const [destinatario, setDestinatario] = useState({ nome: '', email: '', azienda: '', ruolo: '', testo_annuncio: '' })
+  const [destinatario, setDestinatario] = useState({ nome: '', email: '', azienda: '', ruolo: '', testo_annuncio: '', url_azienda: '' })
   const [generating, setGenerating] = useState(false)
   const [fetchingAnnuncio, setFetchingAnnuncio] = useState(false)
   const [mailText, setMailText] = useState('')
@@ -45,6 +45,24 @@ export default function MailPage() {
       } catch (e) { /* ignora errori silenziosamente */ }
       setFetchingAnnuncio(false)
     }
+  }
+
+
+  const fetchAziendaInfo = async () => {
+    if (!destinatario.url_azienda) return
+    setFetchingAnnuncio(true)
+    try {
+      const res = await fetch('/api/fetch-job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: destinatario.url_azienda })
+      })
+      const data = await res.json()
+      if (data.text) {
+        setDestinatario(d => ({ ...d, testo_annuncio: 'Info dal sito aziendale: ' + data.text.substring(0, 2000) }))
+      }
+    } catch (e) {}
+    setFetchingAnnuncio(false)
   }
 
   const generateMail = async () => {
@@ -195,6 +213,19 @@ Presenta il profilo in modo conciso, spiega perché questa azienda specifica (us
             onChange={e => setDestinatario(d => ({...d, email: e.target.value}))}
             placeholder="hr@azienda.it"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Sito / LinkedIn azienda <span className="text-gray-400">(per candidature spontanee)</span></label>
+          <div className="flex gap-2">
+            <input type="url" value={destinatario.url_azienda}
+              onChange={e => setDestinatario(d => ({...d, url_azienda: e.target.value}))}
+              placeholder="https://azienda.it o linkedin.com/company/..."
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <button onClick={fetchAziendaInfo} disabled={fetchingAnnuncio || !destinatario.url_azienda}
+              className="bg-purple-600 disabled:opacity-50 text-white px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap">
+              {fetchingAnnuncio ? '⏳' : '🔍 Leggi'}
+            </button>
+          </div>
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">

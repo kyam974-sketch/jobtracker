@@ -153,16 +153,19 @@ export default function JobsPage() {
     setTimeout(() => setMessage(null), 3000)
   }
 
-  const ScoreBar = ({ score, label }) => (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-gray-500 w-16 shrink-0">{label}</span>
-      <div className="flex gap-0.5">
-        {[1,2,3,4,5].map(i => (
-          <div key={i} className={`w-5 h-2 rounded-sm ${i <= score ? SCORE_COLORS[score] : 'bg-gray-200'}`} />
-        ))}
+  const ScoreBar = ({ score, label, invert }) => {
+    const filled = invert ? score : (6 - score)
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-500 w-16 shrink-0">{label}</span>
+        <div className="flex gap-0.5">
+          {[1,2,3,4,5].map(i => (
+            <div key={i} className={`w-5 h-2 rounded-sm ${i <= filled ? SCORE_COLORS[score] : 'bg-gray-200'}`} />
+          ))}
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   const isAnalyzing = (jobId, type) => analyzing === jobId + (type === 'deep' ? '_deep' : '_quick')
 
@@ -226,8 +229,8 @@ export default function JobsPage() {
                       {score.deep ? '🔍 Analisi approfondita' : '⚡ Analisi rapida'}
                     </span>
                   </div>
-                  <ScoreBar score={score.qualita} label="Qualità" />
-                  <ScoreBar score={score.truffa} label="Rischio" />
+                  <ScoreBar score={score.qualita} label="Qualità" invert={false} />
+                  <ScoreBar score={score.truffa} label="Rischio" invert={true} />
                   <div className="text-xs text-gray-500 mt-1">{RISK_LABELS[score.truffa]}</div>
                   {score.note && <div className="text-xs text-gray-600 mt-1 italic">{score.note}</div>}
                 </div>
