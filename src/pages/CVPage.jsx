@@ -76,8 +76,8 @@ export default function CVPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompt: 'Estrai tutto il testo da questo CV in modo strutturato, mantenendo la gerarchia delle sezioni (ESPERIENZA LAVORATIVA, FORMAZIONE, COMPETENZE, ecc.). Restituisci solo il testo estratto del CV, senza commenti aggiuntivi.',
-            systemPrompt: 'Sei un assistente specializzato nell\'estrazione di testo da PDF. Estrai solo il contenuto del CV.',
+            prompt: 'Estrai TUTTO il testo da questo CV senza omettere nulla. Il documento potrebbe avere più pagine e sezioni in fondo come Formazione, Istruzione, Lingue, Competenze Linguistiche, Hobby. Estrai ogni singola sezione fino alla fine del documento. Struttura con titoli di sezione in maiuscolo. Non troncare e non saltare nessuna parte.',
+            systemPrompt: 'Sei un assistente specializzato in estrazione di testo da PDF. Estrai il 100% del contenuto, incluse tutte le sezioni in fondo: lingue, formazione, hobby, interessi. Non fermarti mai prima della fine del documento.',
             pdfBase64: base64
           })
         })
