@@ -4,7 +4,6 @@ import { callAI } from '../lib/callAI'
 import { useAuth } from '../context/AuthContext'
 
 const TIPI = ['azienda', 'agenzia', 'interinale']
-
 const EMPTY_FORM = {
   nome: '', tipo: 'azienda', settore: '',
   contatto_email: '', url: '', note: '',
@@ -23,6 +22,7 @@ export default function CompaniesPage() {
   const [filter, setFilter] = useState('tutti')
   const [suggesting, setSuggesting] = useState(false)
   const [suggestions, setSuggestions] = useState([])
+  const [suggestCity, setSuggestCity] = useState('')
   const [profile, setProfile] = useState(null)
   const [message, setMessage] = useState(null)
 
@@ -36,6 +36,7 @@ export default function CompaniesPage() {
     ])
     setCompanies(comp || [])
     setProfile(prof)
+    setSuggestCity(prof?.citta_target || '')
     setLoading(false)
   }
 
@@ -76,31 +77,22 @@ export default function CompaniesPage() {
   const suggestCompanies = async () => {
     setSuggesting(true)
     setSuggestions([])
-    const prompt = `Suggerisci 10 aziende o agenzie a Milano adatte per una persona con questo profilo:
-Settore: ${profile?.settore || ''} - ${profile?.sottosettore || ''}
-Lingue: ${(profile?.lingue || []).join(', ')}
-
-Per ogni azienda fornisci SOLO un JSON array con questa struttura:
-[
-  {
-    "nome": "Nome Azienda",
-    "tipo": "azienda" | "agenzia" | "interinale",
-    "settore": "settore specifico",
-    "url": "https://...",
-    "note": "breve descrizione di perché è rilevante"
-  }
-]
-
-Includi: aziende del settore, agenzie specializzate, agenzie interinali attive nel settore.
-Rispondi SOLO con il JSON array, senza markdown.`
+    setMessage(null)
+    const city = suggestCity || 'Italia'
+    const settore = (profile?.settore || '') + ' ' + (profile?.sottosettore || '')
+    const lingue = (profile?.lingue || []).join(', ') || 'non specificate'
+    const prompt = 'Suggerisci 10 aziende o agenzie reali a ' + city + ' adatte per chi lavora nel settore: ' + settore.trim() + '. Lingue: ' + lingue + '. Restituisci SOLO un array JSON valido, senza markdown, senza testo prima o dopo. Formato: [{"nome":"Nome","tipo":"azienda","settore":"settore","url":"https://sito.it","note":"perche è rilevante"}]. Il campo tipo deve essere esattamente: azienda, agenzia, o interinale.'
 
     try {
-      const result = await callAI(prompt, 'Sei un esperto di mercato del lavoro italiano. Rispondi SOLO con JSON valido.')
+      const result = await callAI(prompt, 'Sei un esperto di mercato del lavoro italiano. Rispondi SOLO con un array JSON valido. Nessun testo aggiuntivo.')
       const clean = result.replace(/```json|```/g, '').trim()
-      const parsed = JSON.parse(clean)
+      const start = clean.indexOf('[')
+      const end = clean.lastIndexOf(']')
+      if (start === -1 || end === -1) throw new Error('JSON non trovato')
+      const parsed = JSON.parse(clean.substring(start, end + 1))
       setSuggestions(parsed)
     } catch (e) {
-      setMessage({ type: 'error', text: 'Errore nella generazione suggerimenti.' })
+      setMessage({ type: 'error', text: 'Errore nella generazione suggerimenti. Riprova.' })
     }
     setSuggesting(false)
   }
@@ -138,7 +130,12 @@ Rispondi SOLO con il JSON array, senza markdown.`
       {/* Suggerimenti AI */}
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
         <div className="text-sm font-medium text-blue-800 mb-2">✨ Suggerimenti AI</div>
-        <p className="text-xs text-blue-600 mb-3">Trova aziende e agenzie adatte al tuo profilo a Milano</p>
+        <div className="mb-3">
+          <label className="block text-xs text-blue-700 mb-1">Città</label>
+          <input type="text" value={suggestCity} onChange={e => setSuggestCity(e.target.value)}
+            placeholder="es. Milano, Roma, Torino..."
+            className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
         <button onClick={suggestCompanies} disabled={suggesting}
           className="w-full bg-blue-600 disabled:opacity-50 text-white font-medium py-2 rounded-lg text-sm">
           {suggesting ? '⏳ Ricerca in corso...' : '🔍 Suggerisci aziende'}
@@ -179,12 +176,18 @@ Rispondi SOLO con il JSON array, senza markdown.`
 
       {/* Filtri */}
       <div className="flex gap-2 overflow-x-auto pb-2 mb-4">
-        {[['tutti', 'Tutte'], ['azienda', 'Aziende'], ['agenzia', 'Agenzie'], ['interinale', 'Interinali'], ['spontanea', '📨 Spontanee']].map(([id, label]) => (
+        {[
+          ['tutti', 'Tutte', companies.length],
+          ['azienda', 'Aziende', companies.filter(c => c.tipo === 'azienda').length],
+          ['agenzia', 'Agenzie', companies.filter(c => c.tipo === 'agenzia').length],
+          ['interinale', 'Interinali', companies.filter(c => c.tipo === 'interinale').length],
+          ['spontanea', '📨 Spontanee', companies.filter(c => c.candidatura_spontanea).length],
+        ].map(([id, label, count]) => (
           <button key={id} onClick={() => setFilter(id)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
               filter === id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
             }`}>
-            {label} {id === 'tutti' ? `(${companies.length})` : `(${id === 'spontanea' ? companies.filter(c => c.candidatura_spontanea).length : companies.filter(c => c.tipo === id).length})`}
+            {label} ({count})
           </button>
         ))}
       </div>
@@ -202,11 +205,9 @@ Rispondi SOLO con il JSON array, senza markdown.`
                 <div className="font-semibold text-gray-900 truncate">{c.nome}</div>
                 <div className="text-xs text-gray-500 mt-0.5">{c.tipo}{c.settore ? ` · ${c.settore}` : ''}</div>
               </div>
-              <div className="flex gap-1 shrink-0">
-                {c.candidatura_spontanea && (
-                  <span className="text-xs bg-purple-50 text-purple-600 px-2 py-1 rounded-full">spontanea</span>
-                )}
-              </div>
+              {c.candidatura_spontanea && (
+                <span className="text-xs bg-purple-50 text-purple-600 px-2 py-1 rounded-full shrink-0">spontanea</span>
+              )}
             </div>
             {c.note && <div className="text-xs text-gray-400 mt-2 truncate">{c.note}</div>}
           </div>
