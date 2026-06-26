@@ -12,7 +12,6 @@ const FORM_VUOTO = {
   competenze: '',
   lingue: [{ lingua: '', livello: '' }],
   hobby: '',
-  altroInfo: '',
 }
 
 export default function CVPage() {
@@ -20,18 +19,14 @@ export default function CVPage() {
   const [versions, setVersions] = useState([])
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [mode, setMode] = useState(null) // null | 'incolla' | 'form' | 'ai'
-  const [selectedVersion, setSelectedVersion] = useState(null)
-  const [showDetail, setShowDetail] = useState(false)
-
-  // Incolla testo
-  const [testoCV, setTestoCV] = useState('')
-  const [nomeVersione, setNomeVersione] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  // Form
+  const [showForm, setShowForm] = useState(false)
   const [formData, setFormData] = useState(FORM_VUOTO)
   const [generatingFromForm, setGeneratingFromForm] = useState(false)
+  const [selectedVersion, setSelectedVersion] = useState(null)
+  const [showDetail, setShowDetail] = useState(false)
+  const [editingVersion, setEditingVersion] = useState(null) // versione in modifica
+  const [editingTesto, setEditingTesto] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
 
   // AI
   const [aiMode, setAiMode] = useState('riscrivi')
@@ -42,7 +37,7 @@ export default function CVPage() {
   const [savingResult, setSavingResult] = useState(false)
   const [savingResultName, setSavingResultName] = useState('')
 
-  // Foto e download
+  // Foto
   const [photoUrl, setPhotoUrl] = useState(null)
   const [cloudConfig, setCloudConfig] = useState({ cloudName: '', uploadPreset: '' })
   const [showCloudSetup, setShowCloudSetup] = useState(false)
@@ -80,10 +75,10 @@ export default function CVPage() {
     if (!cloudConfig.cloudName || !cloudConfig.uploadPreset) { setShowCloudSetup(true); return }
     setUploadingPhoto(true)
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('upload_preset', cloudConfig.uploadPreset)
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudConfig.cloudName}/image/upload`, { method: 'POST', body: formData })
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('upload_preset', cloudConfig.uploadPreset)
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudConfig.cloudName}/image/upload`, { method: 'POST', body: fd })
       const data = await res.json()
       if (data.secure_url) {
         setPhotoUrl(data.secure_url)
@@ -94,38 +89,24 @@ export default function CVPage() {
     setUploadingPhoto(false)
   }
 
-  const saveTestoCV = async () => {
-    if (!testoCV.trim() || !nomeVersione.trim()) return
-    setSaving(true)
-    await supabase.from('cv_versions').insert({ user_id: user.id, nome_versione: nomeVersione.trim(), testo: testoCV.trim() })
-    await supabase.from('profiles').upsert({ user_id: user.id, cv_testo: testoCV.trim(), updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
-    setSaving(false)
-    setTestoCV('')
-    setNomeVersione('')
-    setMode(null)
-    setMessage({ type: 'success', text: 'CV salvato!' })
-    loadData()
-  }
-
   const generateFromForm = async () => {
     setGeneratingFromForm(true)
-    const esperienzeTesto = formData.esperienze.map(e =>
+    const esperienzeTesto = formData.esperienze.filter(e => e.ruolo || e.azienda).map(e =>
       `${e.ruolo}${e.azienda ? ' | ' + e.azienda : ''}${e.periodo ? ' | ' + e.periodo : ''}\n${e.punti}`
     ).join('\n\n')
-    const formazioneTesto = formData.formazione.map(f =>
+    const formazioneTesto = formData.formazione.filter(f => f.titolo).map(f =>
       `${f.titolo}${f.istituto ? ' | ' + f.istituto : ''}${f.anno ? ' | ' + f.anno : ''}${f.note ? '\n' + f.note : ''}`
     ).join('\n')
-    const lingueTesto = formData.lingue.map(l => `${l.lingua}${l.livello ? ': ' + l.livello : ''}`).join(', ')
+    const lingueTesto = formData.lingue.filter(l => l.lingua).map(l => `${l.lingua}${l.livello ? ': ' + l.livello : ''}`).join(', ')
 
-    const prompt = `Crea un CV professionale completo in italiano per questa persona. Restituisci SOLO il testo del CV, senza commenti. Struttura con sezioni in MAIUSCOLO.
+    const prompt = `Crea un CV professionale completo in italiano. Restituisci SOLO il testo del CV, senza commenti. Struttura con sezioni in MAIUSCOLO. Inizia con il nome.
 
-DATI ANAGRAFICI:
-Nome: ${formData.nome} ${formData.cognome}
-Titolo professionale: ${formData.titolo}
-Telefono: ${formData.telefono}
-Email: ${formData.email}
-Città: ${formData.citta}
-${formData.patente ? 'Patente: ' + formData.patente : ''}
+NOME: ${formData.nome} ${formData.cognome}
+TITOLO PROFESSIONALE: ${formData.titolo}
+TELEFONO: ${formData.telefono}
+EMAIL: ${formData.email}
+CITTÀ: ${formData.citta}
+${formData.patente ? 'PATENTE: ' + formData.patente : ''}
 
 PROFILO PROFESSIONALE:
 ${formData.profilo}
@@ -141,16 +122,14 @@ ${formData.competenze}
 
 LINGUE:
 ${lingueTesto}
-
-${formData.hobby ? 'HOBBY E INTERESSI:\n' + formData.hobby : ''}
-${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
+${formData.hobby ? '\nHOBBY E INTERESSI:\n' + formData.hobby : ''}`
 
     try {
-      const res = await callAI(prompt, 'Sei un esperto di career coaching. Scrivi CV professionali in italiano con sezioni in MAIUSCOLO.')
+      const res = await callAI(prompt, 'Sei un esperto di career coaching. Scrivi CV professionali in italiano. Sezioni in MAIUSCOLO. Solo testo CV, nessun commento.')
       const nome = `CV ${formData.nome} ${formData.cognome} ${new Date().toLocaleDateString('it-IT')}`
       await supabase.from('cv_versions').insert({ user_id: user.id, nome_versione: nome, testo: res })
       await supabase.from('profiles').upsert({ user_id: user.id, cv_testo: res, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
-      setMode(null)
+      setShowForm(false)
       setFormData(FORM_VUOTO)
       setMessage({ type: 'success', text: 'CV generato e salvato!' })
       loadData()
@@ -158,15 +137,32 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
     setGeneratingFromForm(false)
   }
 
+  const openEdit = (v) => {
+    setEditingVersion(v)
+    setEditingTesto(v.testo)
+    setShowDetail(false)
+  }
+
+  const saveEdit = async () => {
+    if (!editingVersion || !editingTesto.trim()) return
+    setSavingEdit(true)
+    await supabase.from('cv_versions').update({ testo: editingTesto.trim() }).eq('id', editingVersion.id)
+    setSavingEdit(false)
+    setEditingVersion(null)
+    setEditingTesto('')
+    setMessage({ type: 'success', text: 'Modifiche salvate!' })
+    loadData()
+  }
+
   const analyzeCV = async () => {
     if (!selectedVersion) return
     setAnalyzing(true)
     setResult('')
     const prompts = {
-      riscrivi: `Riscrivi questo CV in modo professionale. Restituisci SOLO il testo del CV riscritto, senza commenti. Inizia con il nome della persona.\n\nREGOLE ASSOLUTE:\n- Mantieni TUTTE le sezioni presenti (Formazione, Lingue, Competenze, Certificazioni, ecc.)\n- Non perdere NESSUNA informazione: titoli di studio, lingue con livello, certificazioni, date\n\nLinee guida:\n- Titoli sezioni in MAIUSCOLO\n- Profilo professionale concreto in apertura\n- Tono professionale e diretto\n\nCV originale (non perdere nulla):\n${selectedVersion.testo}`,
-      analizza: `Analizza questo CV e fornisci feedback:\n1. PUNTI DI FORZA\n2. PUNTI CRITICI\n3. AZIONI CONSIGLIATE\n\nCV:\n${selectedVersion.testo}`,
-      aggiorna: `Aggiorna questo CV integrando le nuove informazioni. REGOLE:\n- Restituisci il CV COMPLETO con TUTTE le sezioni originali\n- Non perdere nessuna informazione già presente\n- Solo testo CV, senza commenti\n\nCV attuale:\n${selectedVersion.testo}\n\nNuove informazioni:\n${nuoveEsperienze}`,
-      adatta: `Adatta questo CV per questa offerta. Restituisci SOLO il testo del CV adattato, senza commenti.\n\nCV originale:\n${selectedVersion.testo}\n\nOfferta:\n${offertaTesto}`
+      riscrivi: `Riscrivi questo CV in modo professionale. Restituisci SOLO il testo del CV riscritto, senza commenti. Inizia con il nome.\n\nREGOLE ASSOLUTE:\n- Mantieni TUTTE le sezioni (Formazione, Lingue, Competenze, ecc.)\n- Non perdere NESSUNA informazione\n- Sezioni in MAIUSCOLO\n- Profilo professionale concreto in apertura\n- Tono diretto e professionale\n\nCV:\n${selectedVersion.testo}`,
+      analizza: `Analizza questo CV e fornisci feedback strutturato:\n1. PUNTI DI FORZA\n2. PUNTI CRITICI (con esempi concreti)\n3. AZIONI CONSIGLIATE\n\nCV:\n${selectedVersion.testo}`,
+      aggiorna: `Aggiorna questo CV aggiungendo le nuove informazioni. REGOLE:\n- Restituisci il CV COMPLETO con TUTTE le sezioni originali intatte\n- Non perdere nessuna informazione già presente\n- Solo testo CV, nessun commento\n\nCV attuale:\n${selectedVersion.testo}\n\nNuove informazioni:\n${nuoveEsperienze}`,
+      adatta: `Adatta questo CV per questa offerta specifica. REGOLE:\n- Mantieni TUTTE le sezioni originali\n- Solo testo CV, nessun commento\n\nCV:\n${selectedVersion.testo}\n\nOfferta:\n${offertaTesto}`
     }
     try {
       const res = await callAI(prompts[aiMode], 'Sei un esperto di career coaching italiano. Scrivi in italiano.')
@@ -197,7 +193,7 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
     try {
       if (format === 'pdf') await generateCVPdf(version.testo, profile, profile?.foto_url || photoUrl || null)
       else await generateCVDocx(version.testo, profile)
-    } catch (e) { setMessage({ type: 'error', text: 'Errore download: ' + e.message }) }
+    } catch (e) { setMessage({ type: 'error', text: 'Errore download.' }) }
     setDownloading(false)
   }
 
@@ -205,7 +201,6 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
     if (!confirm('Eliminare questa versione?')) return
     await supabase.from('cv_versions').delete().eq('id', id)
     if (selectedVersion?.id === id) setSelectedVersion(null)
-    setShowDetail(false)
     loadData()
   }
 
@@ -267,61 +262,30 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
         </div>
       )}
 
-      {/* Aggiungi nuovo CV */}
-      {!mode && (
-        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
-          <div className="text-sm font-medium text-gray-700 mb-3">Aggiungi CV</div>
-          <div className="grid grid-cols-2 gap-3">
-            <button onClick={() => setMode('incolla')}
-              className="bg-blue-50 text-blue-700 border border-blue-200 py-3 rounded-xl text-sm font-medium text-center">
-              📋 Incolla testo
-            </button>
-            <button onClick={() => setMode('form')}
-              className="bg-green-50 text-green-700 border border-green-200 py-3 rounded-xl text-sm font-medium text-center">
-              ✏️ Compila form
-            </button>
-          </div>
-        </div>
+      {/* Bottone crea CV */}
+      {!showForm && !editingVersion && (
+        <button onClick={() => setShowForm(true)}
+          className="w-full bg-green-600 text-white py-3 rounded-xl text-sm font-medium mb-5">
+          ✏️ Crea nuovo CV
+        </button>
       )}
 
-      {/* Modalità: Incolla testo */}
-      {mode === 'incolla' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-medium text-gray-700">Incolla il testo del CV</div>
-            <button onClick={() => setMode(null)} className="text-gray-400 text-xs">✕ Annulla</button>
-          </div>
-          <textarea value={testoCV} onChange={e => setTestoCV(e.target.value)}
-            placeholder="Incolla qui il testo completo del tuo CV. Puoi copiarlo da Word, dal tuo CV attuale, o da qualsiasi altro documento..."
-            rows={10}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none mb-3" />
-          <input type="text" value={nomeVersione} onChange={e => setNomeVersione(e.target.value)}
-            placeholder="Nome versione (es. CV base, CV retail, CV freelance...)"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3" />
-          <button onClick={saveTestoCV} disabled={saving || !testoCV.trim() || !nomeVersione.trim()}
-            className="w-full bg-blue-600 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-medium">
-            {saving ? 'Salvataggio...' : 'Salva CV'}
-          </button>
-        </div>
-      )}
-
-      {/* Modalità: Compila form */}
-      {mode === 'form' && (
+      {/* Form */}
+      {showForm && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
           <div className="flex items-center justify-between mb-4">
             <div className="text-sm font-medium text-gray-700">Compila il CV</div>
-            <button onClick={() => setMode(null)} className="text-gray-400 text-xs">✕ Annulla</button>
+            <button onClick={() => { setShowForm(false); setFormData(FORM_VUOTO) }} className="text-gray-400 text-xs">✕ Annulla</button>
           </div>
           <div className="space-y-4">
-            {/* Dati base */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Nome</label>
+                <label className="block text-xs text-gray-500 mb-1">Nome *</label>
                 <input type="text" value={formData.nome} onChange={e => setFormData(f => ({...f, nome: e.target.value}))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Cognome</label>
+                <label className="block text-xs text-gray-500 mb-1">Cognome *</label>
                 <input type="text" value={formData.cognome} onChange={e => setFormData(f => ({...f, cognome: e.target.value}))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
               </div>
@@ -357,8 +321,6 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
               </div>
             </div>
-
-            {/* Profilo */}
             <div>
               <label className="block text-xs text-gray-500 mb-1">Profilo professionale</label>
               <textarea value={formData.profilo} onChange={e => setFormData(f => ({...f, profilo: e.target.value}))}
@@ -368,7 +330,7 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
 
             {/* Esperienze */}
             <div>
-              <label className="block text-xs text-gray-500 mb-2">Esperienze lavorative</label>
+              <label className="block text-xs text-gray-700 font-medium mb-2">Esperienze lavorative</label>
               {formData.esperienze.map((esp, i) => (
                 <div key={i} className="bg-gray-50 rounded-lg p-3 mb-2 space-y-2">
                   <div className="grid grid-cols-2 gap-2">
@@ -382,7 +344,7 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
                   <input type="text" placeholder="Periodo (es. 01/2023 – Presente)" value={esp.periodo}
                     onChange={e => { const n = [...formData.esperienze]; n[i].periodo = e.target.value; setFormData(f => ({...f, esperienze: n})) }}
                     className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
-                  <textarea placeholder="Descrizione attività (una per riga)" value={esp.punti} rows={2}
+                  <textarea placeholder="Attività svolte (una per riga)" value={esp.punti} rows={2}
                     onChange={e => { const n = [...formData.esperienze]; n[i].punti = e.target.value; setFormData(f => ({...f, esperienze: n})) }}
                     className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs resize-none" />
                 </div>
@@ -392,7 +354,7 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
 
             {/* Formazione */}
             <div>
-              <label className="block text-xs text-gray-500 mb-2">Formazione</label>
+              <label className="block text-xs text-gray-700 font-medium mb-2">Formazione</label>
               {formData.formazione.map((f, i) => (
                 <div key={i} className="bg-gray-50 rounded-lg p-3 mb-2 space-y-2">
                   <div className="grid grid-cols-2 gap-2">
@@ -406,6 +368,9 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
                   <input type="text" placeholder="Istituto/Scuola" value={f.istituto}
                     onChange={e => { const n = [...formData.formazione]; n[i].istituto = e.target.value; setFormData(fd => ({...fd, formazione: n})) }}
                     className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                  <input type="text" placeholder="Note (es. voto, certificazione)" value={f.note}
+                    onChange={e => { const n = [...formData.formazione]; n[i].note = e.target.value; setFormData(fd => ({...fd, formazione: n})) }}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
                 </div>
               ))}
               <button onClick={addFormazione} className="text-blue-600 text-xs font-medium">+ Aggiungi formazione</button>
@@ -413,13 +378,13 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
 
             {/* Lingue */}
             <div>
-              <label className="block text-xs text-gray-500 mb-2">Lingue</label>
+              <label className="block text-xs text-gray-700 font-medium mb-2">Lingue</label>
               {formData.lingue.map((l, i) => (
                 <div key={i} className="flex gap-2 mb-2">
                   <input type="text" placeholder="Lingua" value={l.lingua}
                     onChange={e => { const n = [...formData.lingue]; n[i].lingua = e.target.value; setFormData(f => ({...f, lingue: n})) }}
                     className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
-                  <input type="text" placeholder="Livello (es. C1)" value={l.livello}
+                  <input type="text" placeholder="Livello" value={l.livello}
                     onChange={e => { const n = [...formData.lingue]; n[i].livello = e.target.value; setFormData(f => ({...f, lingue: n})) }}
                     className="w-24 border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
                 </div>
@@ -427,15 +392,12 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
               <button onClick={addLingua} className="text-blue-600 text-xs font-medium">+ Aggiungi lingua</button>
             </div>
 
-            {/* Competenze */}
             <div>
               <label className="block text-xs text-gray-500 mb-1">Competenze</label>
               <textarea value={formData.competenze} onChange={e => setFormData(f => ({...f, competenze: e.target.value}))}
-                placeholder="es. Trucco cinematografico, Acconciature sposa, Airbrush..."
+                placeholder="es. Trucco cinematografico, Acconciature sposa, Airbrush makeup..."
                 rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none" />
             </div>
-
-            {/* Hobby */}
             <div>
               <label className="block text-xs text-gray-500 mb-1">Hobby e interessi (opzionale)</label>
               <textarea value={formData.hobby} onChange={e => setFormData(f => ({...f, hobby: e.target.value}))}
@@ -450,8 +412,24 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
         </div>
       )}
 
+      {/* Modifica versione */}
+      {editingVersion && (
+        <div className="bg-white rounded-xl border border-blue-300 p-4 mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-medium text-gray-700">✏️ Modifica — {editingVersion.nome_versione}</div>
+            <button onClick={() => { setEditingVersion(null); setEditingTesto('') }} className="text-gray-400 text-xs">✕ Annulla</button>
+          </div>
+          <textarea value={editingTesto} onChange={e => setEditingTesto(e.target.value)}
+            rows={15} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none mb-3" />
+          <button onClick={saveEdit} disabled={savingEdit}
+            className="w-full bg-blue-600 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-medium">
+            {savingEdit ? 'Salvataggio...' : '💾 Salva modifiche'}
+          </button>
+        </div>
+      )}
+
       {/* Versioni salvate */}
-      {versions.length > 0 && (
+      {versions.length > 0 && !showForm && !editingVersion && (
         <div className="mb-5">
           <div className="text-sm font-medium text-gray-700 mb-3">Versioni salvate ({versions.length})</div>
           <div className="space-y-2">
@@ -474,6 +452,8 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
                     className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium disabled:opacity-50">📥 Word</button>
                   <button onClick={() => { setSelectedVersion(v); setShowDetail(true) }}
                     className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs font-medium">👁 Leggi</button>
+                  <button onClick={() => openEdit(v)}
+                    className="px-3 py-1.5 bg-yellow-50 text-yellow-700 rounded-lg text-xs font-medium">✏️ Modifica</button>
                   <button onClick={() => deleteVersion(v.id)}
                     className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-medium">🗑</button>
                 </div>
@@ -484,7 +464,7 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
       )}
 
       {/* AI */}
-      {selectedVersion && (
+      {selectedVersion && !showForm && !editingVersion && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
           <div className="text-sm font-medium text-gray-700 mb-1">Elabora con AI</div>
           <div className="text-xs text-gray-400 mb-3">Selezionato: {selectedVersion.nome_versione}</div>
@@ -515,28 +495,27 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
       )}
 
       {/* Risultato AI */}
-      {result && (
+      {result && !showForm && !editingVersion && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
           <div className="text-sm font-medium text-gray-700 mb-3">{aiMode === 'analizza' ? 'Analisi CV' : 'CV generato'}</div>
-          <div className="text-sm text-gray-700 whitespace-pre-wrap mb-4 max-h-80 overflow-y-auto bg-gray-50 rounded-lg p-3">{result}</div>
+          <textarea value={result} onChange={e => setResult(e.target.value)}
+            rows={12} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none mb-3" />
           {aiMode !== 'analizza' && (
-            <div className="flex gap-2 mb-4">
+            <div className="flex gap-2 mb-3">
               <button onClick={() => downloadCV({ testo: result }, 'pdf')} disabled={downloading}
                 className="flex-1 bg-red-50 text-red-700 py-2 rounded-lg text-sm font-medium disabled:opacity-50">📥 PDF</button>
               <button onClick={() => downloadCV({ testo: result }, 'docx')} disabled={downloading}
                 className="flex-1 bg-blue-50 text-blue-700 py-2 rounded-lg text-sm font-medium disabled:opacity-50">📥 Word</button>
             </div>
           )}
-          <div className="border-t border-gray-100 pt-4">
-            <div className="flex gap-2">
-              <input type="text" value={savingResultName} onChange={e => setSavingResultName(e.target.value)}
-                placeholder="Nome versione..."
-                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-              <button onClick={saveResult} disabled={savingResult || !savingResultName.trim()}
-                className="bg-blue-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium">
-                {savingResult ? '...' : 'Salva'}
-              </button>
-            </div>
+          <div className="flex gap-2">
+            <input type="text" value={savingResultName} onChange={e => setSavingResultName(e.target.value)}
+              placeholder="Nome versione..."
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+            <button onClick={saveResult} disabled={savingResult || !savingResultName.trim()}
+              className="bg-blue-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium">
+              {savingResult ? '...' : 'Salva'}
+            </button>
           </div>
         </div>
       )}
@@ -547,7 +526,12 @@ ${formData.altroInfo ? 'ALTRE INFORMAZIONI:\n' + formData.altroInfo : ''}`
           <div className="bg-white w-full rounded-t-2xl p-6 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-gray-900 mb-4">{selectedVersion.nome_versione}</h3>
             <div className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-4 max-h-60 overflow-y-auto mb-4">{selectedVersion.testo}</div>
-            <button onClick={() => setShowDetail(false)} className="w-full border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">Chiudi</button>
+            <div className="flex gap-3">
+              <button onClick={() => openEdit(selectedVersion)}
+                className="flex-1 bg-yellow-50 text-yellow-700 py-2.5 rounded-lg text-sm font-medium">✏️ Modifica</button>
+              <button onClick={() => setShowDetail(false)}
+                className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium">Chiudi</button>
+            </div>
           </div>
         </div>
       )}
