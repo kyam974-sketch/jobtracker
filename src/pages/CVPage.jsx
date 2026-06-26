@@ -154,16 +154,19 @@ export default function CVPage() {
     const systemPrompt = 'Sei un esperto di career coaching italiano. Scrivi in italiano. Sii diretto e preciso.'
 
     const prompts = {
-      riscrivi: `Riscrivi questo CV in modo professionale. Restituisci SOLO il testo del CV riscritto, senza titoli come "CV RISCRITTO", senza analisi, senza commenti. Inizia direttamente con il nome della persona.
+      riscrivi: `Riscrivi questo CV in modo professionale. Restituisci SOLO il testo del CV riscritto, senza commenti. Inizia con il nome della persona.
 
-Linee guida:
-- Sezioni con titoli in MAIUSCOLO (PROFILO PROFESSIONALE, ESPERIENZA LAVORATIVA, FORMAZIONE, COMPETENZE, LINGUE)
-- Profilo professionale concreto di 3-4 righe in apertura
-- Esperienze con risultati/numeri dove possibile
-- Rimuovi voci banali e ridondanti
+REGOLE ASSOLUTE:
+- Mantieni TUTTE le sezioni presenti (Formazione, Lingue, Competenze, Certificazioni, ecc.)
+- Non perdere NESSUNA informazione: titoli di studio, lingue con livello, certificazioni, date
+- Se una sezione esiste nell'originale, deve esistere anche nel risultato
+
+Linee guida stilistiche:
+- Titoli sezioni in MAIUSCOLO
+- Profilo professionale concreto in apertura
 - Tono professionale e diretto
 
-CV originale:
+CV originale (non perdere nulla):
 ${selectedVersion.testo}`,
 
       analizza: `Analizza questo CV e fornisci feedback strutturato:
@@ -175,12 +178,18 @@ ${selectedVersion.testo}`,
 CV:
 ${selectedVersion.testo}`,
 
-      aggiorna: `Integra queste nuove esperienze nel CV e restituisci il CV COMPLETO aggiornato. Solo il testo del CV, senza commenti.
+      aggiorna: `Aggiorna questo CV integrando le nuove informazioni. REGOLE ASSOLUTE:
+- Restituisci il CV COMPLETO con TUTTE le sezioni originali (Profilo, Esperienza, Formazione, Competenze, Lingue, ecc.)
+- NON eliminare nessuna sezione esistente
+- NON perdere nessuna informazione già presente
+- Aggiungi le nuove esperienze nella sezione corretta
+- Aggiorna il profilo professionale se necessario
+- Restituisci solo il testo del CV, senza commenti
 
-CV attuale:
+CV attuale (mantieni TUTTO quello che c'è):
 ${selectedVersion.testo}
 
-Nuove esperienze da integrare:
+Nuove informazioni da aggiungere:
 ${nuoveEsperienze}`,
 
       adatta: `Adatta questo CV per questa offerta specifica. Restituisci SOLO il testo del CV adattato, senza commenti. Inizia con il nome della persona.
