@@ -50,7 +50,7 @@ export default function ProfilePage() {
       user_id: user.id, ...profile,
       stipendio_desiderato: profile.stipendio_desiderato ? parseInt(profile.stipendio_desiderato) : null,
       updated_at: new Date().toISOString()
-    })
+    }, { onConflict: 'user_id' })
     if (error) setMessage({ type: 'error', text: 'Errore nel salvataggio: ' + error.message })
     else setMessage({ type: 'success', text: 'Profilo salvato!' })
     setSaving(false)
