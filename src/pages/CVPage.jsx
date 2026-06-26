@@ -14,7 +14,7 @@ export default function CVPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [selectedVersion, setSelectedVersion] = useState(null)
   const [showDetail, setShowDetail] = useState(false)
-  const [mode, setMode] = useState('migliora')
+  const [mode, setMode] = useState('riscrivi')
   const [offertaTesto, setOffertaTesto] = useState('')
   const [nuoveEsperienze, setNuoveEsperienze] = useState('')
   const [result, setResult] = useState('')
@@ -23,8 +23,9 @@ export default function CVPage() {
   const [message, setMessage] = useState(null)
   const [photoUrl, setPhotoUrl] = useState(null)
   const [downloading, setDownloading] = useState(false)
-  const [cloudinaryConfig, setCloudinaryConfig] = useState({ cloudName: '', uploadPreset: '' })
-  const [showCloudinarySetup, setShowCloudinarySetup] = useState(false)
+  const [cloudConfig, setCloudConfig] = useState({ cloudName: '', uploadPreset: '' })
+  const [showCloudSetup, setShowCloudSetup] = useState(false)
+  const [savingCloud, setSavingCloud] = useState(false)
 
   useEffect(() => { loadData() }, [user])
 
@@ -36,17 +37,27 @@ export default function CVPage() {
     ])
     setVersions(vers || [])
     setProfile(prof)
-    if (prof?.portfolio_url?.includes('cloudinary')) setPhotoUrl(prof.portfolio_url)
-    // Carica config Cloudinary da localStorage
-    const saved = localStorage.getItem('cloudinary_config')
-    if (saved) setCloudinaryConfig(JSON.parse(saved))
+    if (prof?.foto_url) setPhotoUrl(prof.foto_url)
+    if (prof?.cloudinary_cloud_name) {
+      setCloudConfig({
+        cloudName: prof.cloudinary_cloud_name,
+        uploadPreset: prof.cloudinary_upload_preset || ''
+      })
+    }
     setLoading(false)
   }
 
-  const saveCloudinaryConfig = () => {
-    localStorage.setItem('cloudinary_config', JSON.stringify(cloudinaryConfig))
-    setShowCloudinarySetup(false)
-    setMessage({ type: 'success', text: 'Configurazione Cloudinary salvata!' })
+  const saveCloudConfig = async () => {
+    setSavingCloud(true)
+    await supabase.from('profiles').upsert({
+      user_id: user.id,
+      cloudinary_cloud_name: cloudConfig.cloudName,
+      cloudinary_upload_preset: cloudConfig.uploadPreset,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id' })
+    setSavingCloud(false)
+    setShowCloudSetup(false)
+    setMessage({ type: 'success', text: 'Configurazione salvata nel profilo.' })
   }
 
   const handleFileUpload = async (e) => {
@@ -65,8 +76,8 @@ export default function CVPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompt: 'Estrai tutto il testo da questo CV in modo strutturato, mantenendo la gerarchia delle sezioni. Restituisci solo il testo estratto, senza commenti.',
-            systemPrompt: 'Sei un assistente specializzato nell\'estrazione di testo da PDF.',
+            prompt: 'Estrai tutto il testo da questo CV in modo strutturato, mantenendo la gerarchia delle sezioni (ESPERIENZA LAVORATIVA, FORMAZIONE, COMPETENZE, ecc.). Restituisci solo il testo estratto del CV, senza commenti aggiuntivi.',
+            systemPrompt: 'Sei un assistente specializzato nell\'estrazione di testo da PDF. Estrai solo il contenuto del CV.',
             pdfBase64: base64
           })
         })
@@ -87,16 +98,18 @@ export default function CVPage() {
   const handlePhotoUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
-    if (!cloudinaryConfig.cloudName || !cloudinaryConfig.uploadPreset) {
-      setShowCloudinarySetup(true)
+    if (!cloudConfig.cloudName || !cloudConfig.uploadPreset) {
+      setShowCloudSetup(true)
+      setMessage({ type: 'error', text: 'Prima configura Cloudinary.' })
       return
     }
     setUploadingPhoto(true)
+    setMessage(null)
     try {
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('upload_preset', cloudinaryConfig.uploadPreset)
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudinaryConfig.cloudName}/image/upload`, {
+      formData.append('upload_preset', cloudConfig.uploadPreset)
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudConfig.cloudName}/image/upload`, {
         method: 'POST', body: formData
       })
       const data = await res.json()
@@ -107,22 +120,28 @@ export default function CVPage() {
           foto_url: data.secure_url,
           updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' })
-        setMessage({ type: 'success', text: 'Foto caricata!' })
+        setMessage({ type: 'success', text: 'Foto caricata e salvata!' })
+      } else {
+        setMessage({ type: 'error', text: 'Errore Cloudinary: ' + (data.error?.message || 'risposta non valida') })
       }
-    } catch { setMessage({ type: 'error', text: 'Errore caricamento foto.' }) }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Errore caricamento foto: ' + err.message })
+    }
     setUploadingPhoto(false)
   }
 
   const downloadCV = async (version, format) => {
     setDownloading(true)
+    // Carica sempre la foto aggiornata dal profilo
+    const currentPhotoUrl = profile?.foto_url || photoUrl || null
     try {
       if (format === 'pdf') {
-        generateCVPdf(version.testo, profile, photoUrl)
+        await generateCVPdf(version.testo, profile, currentPhotoUrl)
       } else {
         await generateCVDocx(version.testo, profile)
       }
     } catch (e) {
-      setMessage({ type: 'error', text: 'Errore nel download. Riprova.' })
+      setMessage({ type: 'error', text: 'Errore nel download: ' + e.message })
     }
     setDownloading(false)
   }
@@ -132,38 +151,39 @@ export default function CVPage() {
     setAnalyzing(true)
     setResult('')
 
+    const systemPrompt = 'Sei un esperto di career coaching italiano. Scrivi in italiano. Sii diretto e preciso.'
+
     const prompts = {
-      migliora: `Riscrivi questo CV in modo professionale. Restituisci SOLO il CV completo riscritto, senza commenti, senza analisi, senza intestazioni come 'CV RISCRITTO'. Inizia direttamente con il nome della persona.
+      riscrivi: `Riscrivi questo CV in modo professionale. Restituisci SOLO il testo del CV riscritto, senza titoli come "CV RISCRITTO", senza analisi, senza commenti. Inizia direttamente con il nome della persona.
 
 Linee guida:
-- Struttura con sezioni in MAIUSCOLO (ESPERIENZA LAVORATIVA, FORMAZIONE, COMPETENZE, LINGUE)
-- Profilo professionale sintetico e concreto in apertura
+- Sezioni con titoli in MAIUSCOLO (PROFILO PROFESSIONALE, ESPERIENZA LAVORATIVA, FORMAZIONE, COMPETENZE, LINGUE)
+- Profilo professionale concreto di 3-4 righe in apertura
 - Esperienze con risultati/numeri dove possibile
-- Rimuovi voci banali o ridondanti
-- Linguaggio diretto e professionale
+- Rimuovi voci banali e ridondanti
+- Tono professionale e diretto
 
 CV originale:
 ${selectedVersion.testo}`,
 
-      analizza: `Analizza questo CV e fornisci feedback dettagliato:
-1. PUNTI DI FORZA (2-3 elementi)
-2. PUNTI DA MIGLIORARE (specifici, con esempi concreti)
-3. SUGGERIMENTI PRATICI (cosa aggiungere, cosa togliere, come riformulare)
+      analizza: `Analizza questo CV e fornisci feedback strutturato:
+
+1. PUNTI DI FORZA (2-3 elementi concreti)
+2. PUNTI CRITICI (specifici, con esempi dal testo)
+3. AZIONI CONSIGLIATE (cosa aggiungere, cosa togliere, come riformulare)
 
 CV:
 ${selectedVersion.testo}`,
 
-      aggiorna: `Integra queste nuove esperienze nel CV esistente e restituisci il CV COMPLETO aggiornato.
-Mantieni lo stile e la struttura del CV originale, inserendo le nuove info nelle sezioni appropriate.
+      aggiorna: `Integra queste nuove esperienze nel CV e restituisci il CV COMPLETO aggiornato. Solo il testo del CV, senza commenti.
 
 CV attuale:
 ${selectedVersion.testo}
 
-Nuove esperienze:
+Nuove esperienze da integrare:
 ${nuoveEsperienze}`,
 
-      adatta: `Adatta questo CV per la posizione descritta e restituisci il CV COMPLETO adattato.
-Enfatizza le esperienze e competenze più rilevanti per questa offerta specifica.
+      adatta: `Adatta questo CV per questa offerta specifica. Restituisci SOLO il testo del CV adattato, senza commenti. Inizia con il nome della persona.
 
 CV originale:
 ${selectedVersion.testo}
@@ -173,12 +193,14 @@ ${offertaTesto}`
     }
 
     try {
-      const res = await callAI(prompts[mode], 'Sei un esperto di career coaching. Scrivi CV professionali in italiano. Nelle sezioni usa titoli in MAIUSCOLO.')
+      const res = await callAI(prompts[mode], systemPrompt)
       setResult(res)
-      setSavingName(mode === 'migliora' ? `CV riscritto ${new Date().toLocaleDateString('it-IT')}` :
-        mode === 'analizza' ? `Analisi CV ${new Date().toLocaleDateString('it-IT')}` :
+      setSavingName(
+        mode === 'riscrivi' ? `CV riscritto ${new Date().toLocaleDateString('it-IT')}` :
+        mode === 'analizza' ? `Analisi ${new Date().toLocaleDateString('it-IT')}` :
         mode === 'aggiorna' ? `CV aggiornato ${new Date().toLocaleDateString('it-IT')}` :
-        `CV adattato ${new Date().toLocaleDateString('it-IT')}`)
+        `CV adattato ${new Date().toLocaleDateString('it-IT')}`
+      )
     } catch { setResult('Errore nella generazione. Riprova.') }
     setAnalyzing(false)
   }
@@ -187,21 +209,18 @@ ${offertaTesto}`
     if (!result || !savingName.trim()) return
     setSaving(true)
     await supabase.from('cv_versions').insert({ user_id: user.id, nome_versione: savingName.trim(), testo: result })
-    if (savingName.toLowerCase().includes('principale') || savingName.toLowerCase().includes('aggiornato')) {
-      await supabase.from('profiles').upsert({ user_id: user.id, cv_testo: result, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
-    }
     setSaving(false)
     setSavingName('')
     setResult('')
-    setMessage({ type: 'success', text: 'Nuova versione salvata!' })
+    setMessage({ type: 'success', text: 'Versione salvata!' })
     loadData()
   }
 
   const deleteVersion = async (id) => {
     if (!confirm('Eliminare questa versione?')) return
     await supabase.from('cv_versions').delete().eq('id', id)
+    if (selectedVersion?.id === id) setSelectedVersion(null)
     setShowDetail(false)
-    setSelectedVersion(null)
     loadData()
   }
 
@@ -211,52 +230,59 @@ ${offertaTesto}`
     <div className="px-4 pt-4 pb-12">
       <h2 className="text-xl font-bold text-gray-900 mb-5">CV Manager</h2>
 
-      {/* Foto profilo */}
+      {/* Foto */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
         <div className="flex items-center gap-4">
           {photoUrl ? (
-            <img src={photoUrl} alt="Foto profilo" className="w-16 h-16 rounded-full object-cover border border-gray-200" />
+            <img src={photoUrl} alt="Foto" className="w-16 h-16 rounded-full object-cover border border-gray-200" />
           ) : (
             <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center text-2xl">👤</div>
           )}
           <div className="flex-1">
-            <div className="text-sm font-medium text-gray-700 mb-1">Foto per il CV</div>
-            <div className="flex gap-2">
-              <label className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer">
-                <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
-                {uploadingPhoto ? '⏳ Caricamento...' : photoUrl ? '🔄 Cambia foto' : '📷 Carica foto'}
+            <div className="text-sm font-medium text-gray-700 mb-2">Foto per il CV</div>
+            <div className="flex gap-2 flex-wrap">
+              <label className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${uploadingPhoto ? 'bg-gray-200 text-gray-500' : 'bg-blue-600 text-white'}`}>
+                <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" disabled={uploadingPhoto} />
+                {uploadingPhoto ? '⏳ Caricamento...' : photoUrl ? '🔄 Cambia' : '📷 Carica foto'}
               </label>
-              <button onClick={() => setShowCloudinarySetup(true)} className="bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg text-xs">
-                ⚙️ Config
+              <button onClick={() => setShowCloudSetup(!showCloudSetup)}
+                className="bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg text-xs">
+                ⚙️ {cloudConfig.cloudName ? 'Cloudinary ✓' : 'Config Cloudinary'}
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Setup Cloudinary */}
-      {showCloudinarySetup && (
+      {/* Config Cloudinary */}
+      {showCloudSetup && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
-          <div className="text-sm font-medium text-blue-800 mb-3">⚙️ Configurazione Cloudinary</div>
-          <div className="space-y-3">
+          <div className="text-sm font-medium text-blue-800 mb-3">⚙️ Cloudinary — configurazione foto</div>
+          <div className="space-y-3 mb-3">
             <div>
               <label className="block text-xs text-blue-700 mb-1">Cloud Name</label>
-              <input type="text" value={cloudinaryConfig.cloudName}
-                onChange={e => setCloudinaryConfig(c => ({...c, cloudName: e.target.value}))}
-                placeholder="es. dxxxxxxxx"
+              <input type="text" value={cloudConfig.cloudName}
+                onChange={e => setCloudConfig(c => ({...c, cloudName: e.target.value}))}
+                placeholder="es. dgnmueqyu"
                 className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm bg-white" />
             </div>
             <div>
               <label className="block text-xs text-blue-700 mb-1">Upload Preset (Unsigned)</label>
-              <input type="text" value={cloudinaryConfig.uploadPreset}
-                onChange={e => setCloudinaryConfig(c => ({...c, uploadPreset: e.target.value}))}
-                placeholder="es. ml_default"
+              <input type="text" value={cloudConfig.uploadPreset}
+                onChange={e => setCloudConfig(c => ({...c, uploadPreset: e.target.value}))}
+                placeholder="es. jobtracker"
                 className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm bg-white" />
             </div>
           </div>
-          <div className="flex gap-2 mt-3">
-            <button onClick={saveCloudinaryConfig} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium">Salva</button>
-            <button onClick={() => setShowCloudinarySetup(false)} className="px-4 border border-blue-300 text-blue-600 py-2 rounded-lg text-sm">Annulla</button>
+          <div className="flex gap-2">
+            <button onClick={saveCloudConfig} disabled={savingCloud}
+              className="flex-1 bg-blue-600 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-medium">
+              {savingCloud ? 'Salvataggio...' : 'Salva nel profilo'}
+            </button>
+            <button onClick={() => setShowCloudSetup(false)}
+              className="px-4 border border-blue-300 text-blue-600 py-2 rounded-lg text-sm">
+              Chiudi
+            </button>
           </div>
         </div>
       )}
@@ -284,23 +310,22 @@ ${offertaTesto}`
             {versions.map(v => (
               <div key={v.id} className={`bg-white rounded-xl border p-4 transition-colors ${selectedVersion?.id === v.id ? 'border-blue-400' : 'border-gray-200'}`}>
                 <div className="flex items-center justify-between gap-2 mb-3">
-                  <div>
-                    <div className="font-medium text-gray-900 text-sm">{v.nome_versione}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-gray-900 text-sm truncate">{v.nome_versione}</div>
                     <div className="text-xs text-gray-400">{new Date(v.created_at).toLocaleDateString('it-IT')}</div>
                   </div>
                   <button onClick={() => setSelectedVersion(selectedVersion?.id === v.id ? null : v)}
                     className={`text-xs px-2 py-1 rounded-lg shrink-0 ${selectedVersion?.id === v.id ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
-                    {selectedVersion?.id === v.id ? '✓ Selezionato' : 'Seleziona'}
+                    {selectedVersion?.id === v.id ? '✓' : 'Usa'}
                   </button>
                 </div>
-                {/* Download buttons */}
                 <div className="flex gap-2 flex-wrap">
                   <button onClick={() => downloadCV(v, 'pdf')} disabled={downloading}
-                    className="px-3 py-1.5 bg-red-50 text-red-700 rounded-lg text-xs font-medium">
+                    className="px-3 py-1.5 bg-red-50 text-red-700 rounded-lg text-xs font-medium disabled:opacity-50">
                     📥 PDF
                   </button>
                   <button onClick={() => downloadCV(v, 'docx')} disabled={downloading}
-                    className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium">
+                    className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium disabled:opacity-50">
                     📥 Word
                   </button>
                   <button onClick={() => { setSelectedVersion(v); setShowDetail(true) }}
@@ -321,31 +346,43 @@ ${offertaTesto}`
       {/* Analisi AI */}
       {selectedVersion && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
-          <div className="text-sm font-medium text-gray-700 mb-3">
-            AI — <span className="text-blue-600">{selectedVersion.nome_versione}</span>
-          </div>
-          <div className="flex rounded-lg bg-gray-100 p-1 mb-4">
-            {[['migliora','✨ Riscrivi'],['analizza','🔍 Analizza'],['aggiorna','📝 Aggiorna'],['adatta','🎯 Adatta']].map(([id, label]) => (
+          <div className="text-sm font-medium text-gray-700 mb-1">Elabora con AI</div>
+          <div className="text-xs text-gray-400 mb-3">Selezionato: {selectedVersion.nome_versione}</div>
+
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            {[['riscrivi','✨ Riscrivi'],['analizza','🔍 Analizza'],['aggiorna','📝 Aggiorna'],['adatta','🎯 Adatta']].map(([id, label]) => (
               <button key={id} onClick={() => setMode(id)}
-                className={`flex-1 py-2 rounded-md text-xs font-medium transition-all ${mode === id ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
+                className={`py-2 rounded-lg text-xs font-medium transition-all ${mode === id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
                 {label}
               </button>
             ))}
           </div>
+
           {mode === 'aggiorna' && (
-            <textarea value={nuoveEsperienze} onChange={e => setNuoveEsperienze(e.target.value)}
-              placeholder="es. Da gennaio 2024 lavoro come Beauty Advisor da Douglas. Ho partecipato al corso XYZ..."
-              rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+            <div className="mb-3">
+              <label className="block text-xs text-gray-500 mb-1">Descrivi le nuove esperienze</label>
+              <textarea value={nuoveEsperienze} onChange={e => setNuoveEsperienze(e.target.value)}
+                placeholder="es. Da gennaio 2024 lavoro come Beauty Advisor da Douglas a Porta di Roma. Ho partecipato a..."
+                rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+            </div>
           )}
+
           {mode === 'adatta' && (
-            <textarea value={offertaTesto} onChange={e => setOffertaTesto(e.target.value)}
-              placeholder="Incolla il testo dell'offerta..."
-              rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+            <div className="mb-3">
+              <label className="block text-xs text-gray-500 mb-1">Testo offerta di lavoro</label>
+              <textarea value={offertaTesto} onChange={e => setOffertaTesto(e.target.value)}
+                placeholder="Incolla il testo dell'offerta..."
+                rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+            </div>
           )}
+
           <button onClick={analyzeCV}
             disabled={analyzing || (mode === 'adatta' && !offertaTesto.trim()) || (mode === 'aggiorna' && !nuoveEsperienze.trim())}
             className="w-full bg-blue-600 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg text-sm">
-            {analyzing ? '⏳ Elaborazione...' : mode === 'migliora' ? '✨ Riscrivi CV' : mode === 'analizza' ? '🔍 Analizza CV' : mode === 'aggiorna' ? '📝 Aggiorna CV' : '🎯 Adatta a offerta'}
+            {analyzing ? '⏳ Elaborazione in corso...' :
+              mode === 'riscrivi' ? '✨ Riscrivi CV' :
+              mode === 'analizza' ? '🔍 Analizza' :
+              mode === 'aggiorna' ? '📝 Aggiorna CV' : '🎯 Adatta a offerta'}
           </button>
         </div>
       )}
@@ -353,22 +390,29 @@ ${offertaTesto}`
       {/* Risultato */}
       {result && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
-          <div className="text-sm font-medium text-gray-700 mb-3">CV generato</div>
+          <div className="text-sm font-medium text-gray-700 mb-3">
+            {mode === 'analizza' ? 'Analisi CV' : 'CV generato'}
+          </div>
           <div className="text-sm text-gray-700 whitespace-pre-wrap mb-4 max-h-80 overflow-y-auto bg-gray-50 rounded-lg p-3">{result}</div>
-          {mode !== 'analizza' && <div className="flex gap-2 mb-4">
-            <button onClick={() => downloadCV({ testo: result }, 'pdf')} disabled={downloading}
-              className="flex-1 bg-red-50 text-red-700 py-2 rounded-lg text-sm font-medium">
-              📥 Scarica PDF
-            </button>
-            <button onClick={() => downloadCV({ testo: result }, 'docx')} disabled={downloading}
-              className="flex-1 bg-blue-50 text-blue-700 py-2 rounded-lg text-sm font-medium">
-              📥 Scarica Word
-            </button>
-          </div>}
+
+          {mode !== 'analizza' && (
+            <div className="flex gap-2 mb-4">
+              <button onClick={() => downloadCV({ testo: result }, 'pdf')} disabled={downloading}
+                className="flex-1 bg-red-50 text-red-700 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+                📥 PDF
+              </button>
+              <button onClick={() => downloadCV({ testo: result }, 'docx')} disabled={downloading}
+                className="flex-1 bg-blue-50 text-blue-700 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+                📥 Word
+              </button>
+            </div>
+          )}
+
           <div className="border-t border-gray-100 pt-4">
             <div className="text-xs text-gray-500 mb-2">Salva come versione</div>
             <div className="flex gap-2">
               <input type="text" value={savingName} onChange={e => setSavingName(e.target.value)}
+                placeholder="Nome versione..."
                 className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               <button onClick={saveAsNewVersion} disabled={saving || !savingName.trim()}
                 className="bg-blue-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium">
