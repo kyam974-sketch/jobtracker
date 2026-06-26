@@ -11,6 +11,7 @@ export default function MailPage() {
   const [tipo, setTipo] = useState('candidatura')
   const [destinatario, setDestinatario] = useState({ nome: '', email: '', azienda: '', ruolo: '', testo_annuncio: '' })
   const [generating, setGenerating] = useState(false)
+  const [fetchingAnnuncio, setFetchingAnnuncio] = useState(false)
   const [mailText, setMailText] = useState('')
   const [copied, setCopied] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -24,9 +25,26 @@ export default function MailPage() {
     setApplications(apps || [])
   }
 
-  const handleSelectApp = (app) => {
+  const handleSelectApp = async (app) => {
     setSelectedApp(app)
     setDestinatario(d => ({ ...d, azienda: app.azienda, ruolo: app.ruolo || '' }))
+
+    // Auto-fetch testo annuncio se c'è un URL
+    if (app.url_offerta) {
+      setFetchingAnnuncio(true)
+      try {
+        const res = await fetch('/api/fetch-job', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: app.url_offerta })
+        })
+        const data = await res.json()
+        if (data.text) {
+          setDestinatario(d => ({ ...d, testo_annuncio: data.text.substring(0, 3000) }))
+        }
+      } catch (e) { /* ignora errori silenziosamente */ }
+      setFetchingAnnuncio(false)
+    }
   }
 
   const generateMail = async () => {
@@ -35,42 +53,50 @@ export default function MailPage() {
     setCopied(false)
     setSaved(false)
 
+    const nome = (profile?.nome || '') + ' ' + (profile?.cognome || '')
     const profiloTesto = profile ? `
-Nome: ${profile.nome || ''} ${profile.cognome || ''}
-Settore: ${profile.settore || ''} - ${profile.sottosettore || ''}
+Mittente: ${nome.trim()}
+Telefono: ${profile.telefono || ''}
+Settore: ${profile.settore || ''} — ${profile.sottosettore || ''}
 Lingue: ${(profile.lingue || []).join(', ')}
-Portfolio: ${profile.portfolio_url || 'non specificato'}
-Note: ${profile.note_profilo || ''}
-    `.trim() : ''
+Portfolio: ${profile.portfolio_url || ''}
+Note: ${profile.note_profilo || ''}`.trim() : ''
 
     const contestoAzienda = destinatario.testo_annuncio
-      ? `\n\nTesto annuncio / informazioni sull'azienda:\n${destinatario.testo_annuncio}`
+      ? '\n\nTesto offerta/note azienda:\n' + destinatario.testo_annuncio.substring(0, 2000)
       : ''
 
+    const systemPrompt = `Sei un assistente che aiuta a scrivere mail di candidatura.
+Scrivi in prima persona, in modo diretto e autentico. 
+REGOLE RIGIDE:
+- Non copiare frasi dall'annuncio
+- Non usare entusiasmo artificiale ("sono appassionata", "mi affascina profondamente")
+- Non dire mai "la vostra missione", "i vostri valori", "la vostra realtà"
+- Niente formule preconfezionate da HR ("dinamica", "proattiva", "teamwork")
+- Tono professionale ma umano, come se la persona scrivesse davvero
+- Massimo 120 parole nel corpo
+- Includi oggetto in cima
+- Firma con nome e cognome + telefono se disponibile`
+
     const prompts = {
-      candidatura: `Scrivi una mail di candidatura professionale in italiano.
-Mittente: ${profiloTesto}
-Destinatario: ${destinatario.nome ? 'Attenzione ' + destinatario.nome : 'Ufficio Risorse Umane'}, azienda ${destinatario.azienda}${destinatario.ruolo ? ', per la posizione: ' + destinatario.ruolo : ''}.
-${destinatario.email ? 'Email: ' + destinatario.email : ''}${contestoAzienda}
-La mail deve essere professionale, personalizzata per il settore/ruolo e per la specifica azienda, concisa (max 200 parole), con oggetto incluso.
-Includi un riferimento al portfolio se disponibile. Adatta tono e contenuto alle caratteristiche dell'azienda se disponibili.`,
+      candidatura: `Scrivi una mail di candidatura in italiano per:
+${profiloTesto}
+Destinatario: ${destinatario.nome ? destinatario.nome + ', ' : ''}${destinatario.azienda}${destinatario.ruolo ? ', posizione: ' + destinatario.ruolo : ''}${contestoAzienda}
 
-      followup: `Scrivi una mail di follow-up/sollecito professionale in italiano.
-Mittente: ${profiloTesto}
-Azienda: ${destinatario.azienda}${destinatario.ruolo ? ', posizione: ' + destinatario.ruolo : ''}${contestoAzienda}
-Contesto: candidatura già inviata, nessuna risposta ricevuta.
-La mail deve essere cortese, breve (max 100 parole), con oggetto incluso.`,
+La mail deve presentare il profilo in modo diretto, senza adulazione. Evidenzia 1-2 elementi concreti del profilo rilevanti per il ruolo/azienda. Proponi un colloquio.`,
 
-      spontanea: `Scrivi una mail di candidatura spontanea professionale in italiano.
-Mittente: ${profiloTesto}
-Azienda: ${destinatario.azienda}
-${destinatario.nome ? 'Referente: ' + destinatario.nome : ''}${contestoAzienda}
-La mail deve esprimere interesse genuino per l'azienda (usa le info disponibili per personalizzare), presentare brevemente il profilo, proporre un colloquio conoscitivo. Max 180 parole. Includi oggetto.`
+      followup: `Scrivi una mail di follow-up in italiano per:
+${profiloTesto}
+Azienda: ${destinatario.azienda}${destinatario.ruolo ? ', posizione: ' + destinatario.ruolo : ''}
+
+Candidatura già inviata, nessuna risposta. Mail breve (max 60 parole nel corpo), diretta, senza pressione eccessiva.`,
+
+      spontanea: `Scrivi una mail di candidatura spontanea in italiano per:
+${profiloTesto}
+Azienda: ${destinatario.azienda}${destinatario.nome ? ', referente: ' + destinatario.nome : ''}${contestoAzienda}
+
+Presenta il profilo in modo conciso, spiega perché questa azienda specifica (usa le info disponibili, ma non essere servile). Proponi un colloquio conoscitivo.`
     }
-
-    const systemPrompt = `Sei un esperto di comunicazione professionale e ricerca lavoro. 
-Scrivi mail efficaci, autentiche e personalizzate. 
-Rispondi SOLO con il testo della mail (oggetto + corpo), senza spiegazioni aggiuntive.`
 
     try {
       const result = await callAI(prompts[tipo], systemPrompt)
@@ -85,6 +111,15 @@ Rispondi SOLO con il testo della mail (oggetto + corpo), senza spiegazioni aggiu
     navigator.clipboard.writeText(mailText)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const openInMail = () => {
+    const lines = mailText.split('\n')
+    const oggettoLine = lines.find(l => l.toLowerCase().startsWith('oggetto:'))
+    const oggetto = oggettoLine ? oggettoLine.replace(/^oggetto:\s*/i, '') : ''
+    const corpo = oggettoLine ? lines.filter(l => l !== oggettoLine).join('\n').trim() : mailText
+    const mailto = `mailto:${destinatario.email || ''}?subject=${encodeURIComponent(oggetto)}&body=${encodeURIComponent(corpo)}`
+    window.location.href = mailto
   }
 
   const saveMail = async () => {
@@ -108,24 +143,25 @@ Rispondi SOLO con il testo della mail (oggetto + corpo), senza spiegazioni aggiu
         ))}
       </div>
 
-      {/* Collega candidatura esistente */}
+      {/* Collega candidatura */}
       {applications.length > 0 && (
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Collega a candidatura (opzionale)</label>
-          <select
-            value={selectedApp?.id || ''}
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Collega a candidatura <span className="text-gray-400 font-normal">(carica l'annuncio in automatico)</span>
+          </label>
+          <select value={selectedApp?.id || ''}
             onChange={e => {
               const app = applications.find(a => a.id === e.target.value)
               if (app) handleSelectApp(app)
-              else setSelectedApp(null)
+              else { setSelectedApp(null); setDestinatario(d => ({...d, azienda: '', ruolo: '', testo_annuncio: ''})) }
             }}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
             <option value="">-- Nessuna --</option>
             {applications.map(a => (
               <option key={a.id} value={a.id}>{a.azienda}{a.ruolo ? ` – ${a.ruolo}` : ''}</option>
             ))}
           </select>
+          {fetchingAnnuncio && <div className="text-xs text-blue-500 mt-1">⏳ Caricamento annuncio...</div>}
         </div>
       )}
 
@@ -136,7 +172,6 @@ Rispondi SOLO con il testo della mail (oggetto + corpo), senza spiegazioni aggiu
           <label className="block text-xs text-gray-500 mb-1">Azienda *</label>
           <input type="text" value={destinatario.azienda}
             onChange={e => setDestinatario(d => ({...d, azienda: e.target.value}))}
-            placeholder="es. Sephora Italia"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -144,14 +179,12 @@ Rispondi SOLO con il testo della mail (oggetto + corpo), senza spiegazioni aggiu
             <label className="block text-xs text-gray-500 mb-1">Nome referente</label>
             <input type="text" value={destinatario.nome}
               onChange={e => setDestinatario(d => ({...d, nome: e.target.value}))}
-              placeholder="es. Dott.ssa Rossi"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Ruolo cercato</label>
             <input type="text" value={destinatario.ruolo}
               onChange={e => setDestinatario(d => ({...d, ruolo: e.target.value}))}
-              placeholder="es. MUA"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
         </div>
@@ -164,46 +197,45 @@ Rispondi SOLO con il testo della mail (oggetto + corpo), senza spiegazioni aggiu
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">
-            Testo annuncio / note sull'azienda <span className="text-gray-400">(opzionale)</span>
+            Testo annuncio / note <span className="text-gray-400">(opzionale — caricato automaticamente se colleghi una candidatura)</span>
           </label>
           <textarea value={destinatario.testo_annuncio}
             onChange={e => setDestinatario(d => ({...d, testo_annuncio: e.target.value}))}
-            placeholder="Incolla il testo dell'offerta o aggiungi note sull'azienda. La mail verrà adattata di conseguenza."
-            rows={4}
+            placeholder="Incolla il testo dell'offerta o aggiungi note sull'azienda..."
+            rows={3}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
         </div>
       </div>
 
-      {/* Genera */}
       <button onClick={generateMail} disabled={generating || !destinatario.azienda}
         className="w-full bg-blue-600 disabled:opacity-50 text-white font-medium py-3 rounded-xl mb-5 transition-colors">
         {generating ? '✨ Generazione in corso...' : '✨ Genera mail'}
       </button>
 
-      {/* Risultato */}
       {mailText && (
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-medium text-gray-700">Mail generata</div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap justify-end">
               {selectedApp && (
                 <button onClick={saveMail}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${saved ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                  className={`px-3 py-1 rounded-lg text-xs font-medium ${saved ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
                   {saved ? '✓ Salvata' : 'Salva'}
                 </button>
               )}
+              <button onClick={openInMail}
+                className="px-3 py-1 rounded-lg text-xs font-medium bg-green-50 text-green-700">
+                📧 Apri in Mail
+              </button>
               <button onClick={copyMail}
-                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${copied ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                className={`px-3 py-1 rounded-lg text-xs font-medium ${copied ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
                 {copied ? '✓ Copiata' : 'Copia'}
               </button>
             </div>
           </div>
-          <textarea
-            value={mailText}
-            onChange={e => setMailText(e.target.value)}
+          <textarea value={mailText} onChange={e => setMailText(e.target.value)}
             rows={12}
-            className="w-full text-sm text-gray-700 resize-none focus:outline-none"
-          />
+            className="w-full text-sm text-gray-700 resize-none focus:outline-none" />
         </div>
       )}
     </div>

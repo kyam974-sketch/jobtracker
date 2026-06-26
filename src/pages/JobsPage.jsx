@@ -19,7 +19,7 @@ const RISK_LABELS = {
   5: '🔴 Evitare',
 }
 
-const ANALYSIS_PROMPT = (jobText, isDeep) => `Analizza questa offerta di lavoro e restituisci SOLO un JSON valido con questa struttura:
+const ANALYSIS_PROMPT = (jobText, isDeep, stipendioDesiderato) => `Analizza questa offerta di lavoro e restituisci SOLO un JSON valido con questa struttura:
 {
   "qualita": <numero 1-5 dove 1=ottima, 5=pessima>,
   "truffa": <numero 1-5 dove 1=affidabile, 5=probabile truffa>,
@@ -27,7 +27,7 @@ const ANALYSIS_PROMPT = (jobText, isDeep) => `Analizza questa offerta di lavoro 
 }
 
 Criteri obbligatori da valutare:
-- Presenza/assenza di RAL o range salariale (obbligatorio per legge - direttiva EU trasparenza retributiva): assenza abbassa qualità
+- Presenza/assenza di RAL o range salariale (obbligatorio per legge - direttiva EU trasparenza retributiva): assenza abbassa qualità${stipendioDesiderato ? `\n- Stipendio desiderato netto: €${stipendioDesiderato}/mese. Se lo stipendio indicato nell'offerta è significativamente inferiore, segnalalo nelle note e abbassa il punteggio qualità.` : ""}
 - Presenza/assenza di tipo di contratto (indeterminato, determinato, ecc.): assenza abbassa qualità  
 - Frasi come "stipendio in base alle capacità" o "retribuzione da definire" sono segnali negativi espliciti
 - Descrizione troncata o vaga abbassa la qualità
@@ -111,7 +111,7 @@ export default function JobsPage() {
 
     try {
       const result = await callAI(
-        ANALYSIS_PROMPT(jobText, deep),
+        ANALYSIS_PROMPT(jobText, deep, profile?.stipendio_desiderato),
         'Sei un esperto di selezione del personale e diritto del lavoro italiano. Rispondi SOLO con JSON valido, senza markdown.'
       )
       const clean = result.replace(/```json|```/g, '').trim()

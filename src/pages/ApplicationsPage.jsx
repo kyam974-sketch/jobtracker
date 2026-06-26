@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 
-const STATI = ['bozza', 'inviata', 'in attesa', 'risposta', 'rifiuto', 'colloquio']
+const STATI = ['bozza', 'inviata', 'nessuna risposta', 'risposta', 'rifiuto', 'colloquio']
 const CANALI = ['email', 'form', 'DM social', 'spontanea', 'agenzia']
 
 const STATO_COLORS = {
@@ -178,10 +178,10 @@ export default function ApplicationsPage() {
                 {app.stato}
               </span>
             </div>
-            <div className="flex gap-3 mt-2 text-xs text-gray-400">
-              {app.canale && <span>📨 {app.canale}</span>}
-              {app.data_invio && <span>📅 {app.data_invio}</span>}
-              {app.prossimo_followup && <span>⏰ {app.prossimo_followup}</span>}
+            <div className="mt-2 space-y-0.5">
+              {app.canale && <div className="text-xs text-gray-400">📨 {app.canale}</div>}
+              {app.data_invio && <div className="text-xs text-gray-400">📅 Inviata: {app.data_invio}</div>}
+              {app.prossimo_followup && <div className="text-xs text-amber-600">⏰ Follow-up: {app.prossimo_followup}</div>}
             </div>
           </div>
         ))}
