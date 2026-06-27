@@ -8,6 +8,7 @@ import MailPage from './pages/MailPage'
 import CVPage from './pages/CVPage'
 import JobsPage from './pages/JobsPage'
 import CompaniesPage from './pages/CompaniesPage'
+import FormPrepPage from './pages/FormPrepPage'
 import { supabase } from './lib/supabase'
 
 const NAV = [
@@ -17,6 +18,7 @@ const NAV = [
   { id: 'aziende', label: 'Aziende', icon: '🏢' },
   { id: 'mail', label: 'Mail', icon: '✉️' },
   { id: 'cv', label: 'CV', icon: '📄' },
+  { id: 'form', label: 'Form', icon: '📝' },
   { id: 'profilo', label: 'Profilo', icon: '👤' },
 ]
 
@@ -61,6 +63,7 @@ function AppContent() {
         {page === 'aziende' && <CompaniesPage />}
         {page === 'mail' && <MailPage />}
         {page === 'cv' && <CVPage />}
+        {page === 'form' && <FormPrepPage />}
         {page === 'profilo' && <ProfilePage />}
       </div>
 
