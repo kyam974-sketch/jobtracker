@@ -23,6 +23,9 @@ export default function CVPage() {
   const [formData, setFormData] = useState(FORM_VUOTO)
   const [generatingFromForm, setGeneratingFromForm] = useState(false)
   const [parsingCV, setParsingCV] = useState(false)
+  const [addMode, setAddMode] = useState(null) // 'esperienza' | 'formazione' | 'lingua'
+  const [addData, setAddData] = useState({})
+  const [addingSaving, setAddingSaving] = useState(false)
   const [selectedVersion, setSelectedVersion] = useState(null)
   const [showDetail, setShowDetail] = useState(false)
   const [editingVersion, setEditingVersion] = useState(null) // versione in modifica
@@ -59,8 +62,17 @@ export default function CVPage() {
     setProfile(prof)
     if (prof?.foto_url) setPhotoUrl(prof.foto_url)
     if (prof?.cloudinary_cloud_name) setCloudConfig({ cloudName: prof.cloudinary_cloud_name, uploadPreset: prof.cloudinary_upload_preset || '' })
+    if (prof?.cv_form_data) setFormData(prof.cv_form_data)
     setLoading(false)
   }
+
+
+  useEffect(() => {
+    if (user && formData.nome) {
+      const timer = setTimeout(() => saveFormData(formData), 1500)
+      return () => clearTimeout(timer)
+    }
+  }, [formData])
 
   const saveCloudConfig = async () => {
     setSavingCloud(true)
@@ -88,6 +100,15 @@ export default function CVPage() {
       }
     } catch { setMessage({ type: 'error', text: 'Errore caricamento foto.' }) }
     setUploadingPhoto(false)
+  }
+
+
+  const saveFormData = async (data) => {
+    await supabase.from('profiles').upsert({
+      user_id: user.id,
+      cv_form_data: data,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id' })
   }
 
   const generateFromForm = async () => {
@@ -187,6 +208,41 @@ ${formData.hobby ? '\nHOBBY E INTERESSI:\n' + formData.hobby : ''}`
       setShowForm(true)
     }
     setParsingCV(false)
+  }
+
+
+  const addToCV = async () => {
+    if (!selectedVersion) return
+    setAddingSaving(true)
+    let nuovoTesto = ''
+    if (addMode === 'esperienza') {
+      nuovoTesto = `${addData.ruolo || ''}${addData.azienda ? ' | ' + addData.azienda : ''}${addData.periodo ? ' | ' + addData.periodo : ''}\n${addData.punti || ''}`
+    } else if (addMode === 'formazione') {
+      nuovoTesto = `${addData.titolo || ''}${addData.istituto ? ' | ' + addData.istituto : ''}${addData.anno ? ' | ' + addData.anno : ''}${addData.note ? '\n' + addData.note : ''}`
+    } else if (addMode === 'lingua') {
+      nuovoTesto = `${addData.lingua || ''}${addData.livello ? ': ' + addData.livello : ''}`
+    }
+
+    const prompt = `Aggiungi questa nuova voce al CV nella sezione corretta. Restituisci SOLO il CV completo aggiornato, senza commenti.
+
+Sezione da aggiornare: ${addMode === 'esperienza' ? 'ESPERIENZA LAVORATIVA' : addMode === 'formazione' ? 'FORMAZIONE' : 'LINGUE'}
+Nuova voce da aggiungere: ${nuovoTesto}
+
+CV attuale:
+${selectedVersion.testo}`
+
+    try {
+      const res = await callAI(prompt, 'Sei un esperto di career coaching. Integra la nuova voce nel CV mantenendo tutto il resto invariato. Solo testo CV, nessun commento.')
+      const nomeName = `${selectedVersion.nome_versione} (aggiornato ${new Date().toLocaleDateString('it-IT')})`
+      await supabase.from('cv_versions').insert({ user_id: user.id, nome_versione: nomeName, testo: res })
+      setAddMode(null)
+      setAddData({})
+      setMessage({ type: 'success', text: 'Aggiunto e salvato come nuova versione!' })
+      loadData()
+    } catch (e) {
+      setMessage({ type: 'error', text: 'Errore. Riprova.' })
+    }
+    setAddingSaving(false)
   }
 
   const analyzeCV = async () => {
@@ -495,6 +551,105 @@ ${formData.hobby ? '\nHOBBY E INTERESSI:\n' + formData.hobby : ''}`
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+
+      {/* Aggiungi al CV selezionato */}
+      {selectedVersion && !showForm && !editingVersion && !addMode && (
+        <div className="mb-4 flex gap-2 flex-wrap">
+          <button onClick={() => { setAddMode('esperienza'); setAddData({}) }}
+            className="px-4 py-2 rounded-xl text-sm font-medium"
+            style={{background:'var(--noir-card)',border:'1px solid var(--noir-border)',color:'var(--accent)'}}>
+            + Esperienza
+          </button>
+          <button onClick={() => { setAddMode('formazione'); setAddData({}) }}
+            className="px-4 py-2 rounded-xl text-sm font-medium"
+            style={{background:'var(--noir-card)',border:'1px solid var(--noir-border)',color:'var(--accent)'}}>
+            + Formazione
+          </button>
+          <button onClick={() => { setAddMode('lingua'); setAddData({}) }}
+            className="px-4 py-2 rounded-xl text-sm font-medium"
+            style={{background:'var(--noir-card)',border:'1px solid var(--noir-border)',color:'var(--accent)'}}>
+            + Lingua
+          </button>
+        </div>
+      )}
+
+      {/* Mini form aggiungi */}
+      {addMode && selectedVersion && (
+        <div className="rounded-xl p-4 mb-4" style={{background:'var(--noir-card)',border:'1px solid var(--violet)'}}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-medium" style={{color:'var(--accent)'}}>
+              {addMode === 'esperienza' ? '+ Aggiungi esperienza' : addMode === 'formazione' ? '+ Aggiungi formazione' : '+ Aggiungi lingua'}
+            </div>
+            <button onClick={() => { setAddMode(null); setAddData({}) }} style={{color:'var(--text-muted)'}} className="text-xs">✕</button>
+          </div>
+
+          {addMode === 'esperienza' && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <input type="text" placeholder="Ruolo" value={addData.ruolo || ''}
+                  onChange={e => setAddData(d => ({...d, ruolo: e.target.value}))}
+                  className="border rounded-lg px-3 py-2 text-sm"
+                  style={{background:'var(--noir-mid)',border:'1px solid var(--noir-border)',color:'var(--text-primary)'}} />
+                <input type="text" placeholder="Azienda" value={addData.azienda || ''}
+                  onChange={e => setAddData(d => ({...d, azienda: e.target.value}))}
+                  className="border rounded-lg px-3 py-2 text-sm"
+                  style={{background:'var(--noir-mid)',border:'1px solid var(--noir-border)',color:'var(--text-primary)'}} />
+              </div>
+              <input type="text" placeholder="Periodo (es. 10/2025 – Presente)" value={addData.periodo || ''}
+                onChange={e => setAddData(d => ({...d, periodo: e.target.value}))}
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                style={{background:'var(--noir-mid)',border:'1px solid var(--noir-border)',color:'var(--text-primary)'}} />
+              <textarea placeholder="Descrizione attività" value={addData.punti || ''} rows={2}
+                onChange={e => setAddData(d => ({...d, punti: e.target.value}))}
+                className="w-full border rounded-lg px-3 py-2 text-sm resize-none"
+                style={{background:'var(--noir-mid)',border:'1px solid var(--noir-border)',color:'var(--text-primary)'}} />
+            </div>
+          )}
+
+          {addMode === 'formazione' && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <input type="text" placeholder="Titolo/Diploma" value={addData.titolo || ''}
+                  onChange={e => setAddData(d => ({...d, titolo: e.target.value}))}
+                  className="border rounded-lg px-3 py-2 text-sm"
+                  style={{background:'var(--noir-mid)',border:'1px solid var(--noir-border)',color:'var(--text-primary)'}} />
+                <input type="text" placeholder="Anno" value={addData.anno || ''}
+                  onChange={e => setAddData(d => ({...d, anno: e.target.value}))}
+                  className="border rounded-lg px-3 py-2 text-sm"
+                  style={{background:'var(--noir-mid)',border:'1px solid var(--noir-border)',color:'var(--text-primary)'}} />
+              </div>
+              <input type="text" placeholder="Istituto" value={addData.istituto || ''}
+                onChange={e => setAddData(d => ({...d, istituto: e.target.value}))}
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                style={{background:'var(--noir-mid)',border:'1px solid var(--noir-border)',color:'var(--text-primary)'}} />
+              <input type="text" placeholder="Note (es. voto, certificazione)" value={addData.note || ''}
+                onChange={e => setAddData(d => ({...d, note: e.target.value}))}
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                style={{background:'var(--noir-mid)',border:'1px solid var(--noir-border)',color:'var(--text-primary)'}} />
+            </div>
+          )}
+
+          {addMode === 'lingua' && (
+            <div className="flex gap-2">
+              <input type="text" placeholder="Lingua" value={addData.lingua || ''}
+                onChange={e => setAddData(d => ({...d, lingua: e.target.value}))}
+                className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                style={{background:'var(--noir-mid)',border:'1px solid var(--noir-border)',color:'var(--text-primary)'}} />
+              <input type="text" placeholder="Livello (es. B2)" value={addData.livello || ''}
+                onChange={e => setAddData(d => ({...d, livello: e.target.value}))}
+                className="w-28 border rounded-lg px-3 py-2 text-sm"
+                style={{background:'var(--noir-mid)',border:'1px solid var(--noir-border)',color:'var(--text-primary)'}} />
+            </div>
+          )}
+
+          <button onClick={addToCV} disabled={addingSaving}
+            className="w-full mt-3 py-2.5 rounded-xl text-sm font-medium text-white disabled:opacity-50"
+            style={{background:'linear-gradient(135deg, var(--violet), var(--accent))'}}>
+            {addingSaving ? '⏳ Salvataggio...' : '✓ Aggiungi e salva'}
+          </button>
         </div>
       )}
 
