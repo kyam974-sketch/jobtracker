@@ -190,9 +190,13 @@ REGOLE:
                     {copied[key] ? '✓ Copiato' : '📋 Copia'}
                   </button>
                 </div>
-                <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>
-                  {risposte[key]}
-                </p>
+                <textarea
+                  value={risposte[key]}
+                  onChange={e => setRisposte(r => ({...r, [key]: e.target.value}))}
+                  rows={3}
+                  className="w-full text-sm leading-relaxed resize-none focus:outline-none rounded-lg p-2"
+                  style={{ color: 'var(--text-primary)', background: 'var(--noir-mid)', border: '1px solid var(--noir-border)' }}
+                />
               </div>
             ) : null
           ))}
