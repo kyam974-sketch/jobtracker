@@ -26,6 +26,7 @@ export default function CVPage() {
   const [addMode, setAddMode] = useState(null) // 'esperienza' | 'formazione' | 'lingua'
   const [addData, setAddData] = useState({})
   const [addingSaving, setAddingSaving] = useState(false)
+  const [addTargetId, setAddTargetId] = useState('all')
   const [selectedVersion, setSelectedVersion] = useState(null)
   const [showDetail, setShowDetail] = useState(false)
   const [editingVersion, setEditingVersion] = useState(null) // versione in modifica
@@ -212,7 +213,6 @@ ${formData.hobby ? '\nHOBBY E INTERESSI:\n' + formData.hobby : ''}`
 
 
   const addToCV = async () => {
-    if (!selectedVersion) return
     setAddingSaving(true)
     let nuovoTesto = ''
     if (addMode === 'esperienza') {
@@ -223,21 +223,20 @@ ${formData.hobby ? '\nHOBBY E INTERESSI:\n' + formData.hobby : ''}`
       nuovoTesto = `${addData.lingua || ''}${addData.livello ? ': ' + addData.livello : ''}`
     }
 
-    const prompt = `Aggiungi questa nuova voce al CV nella sezione corretta. Restituisci SOLO il CV completo aggiornato, senza commenti.
-
-Sezione da aggiornare: ${addMode === 'esperienza' ? 'ESPERIENZA LAVORATIVA' : addMode === 'formazione' ? 'FORMAZIONE' : 'LINGUE'}
-Nuova voce da aggiungere: ${nuovoTesto}
-
-CV attuale:
-${selectedVersion.testo}`
+    const sezione = addMode === 'esperienza' ? 'ESPERIENZA LAVORATIVA' : addMode === 'formazione' ? 'FORMAZIONE' : 'LINGUE'
+    const targets = addTargetId === 'all' ? versions : versions.filter(v => v.id === addTargetId)
 
     try {
-      const res = await callAI(prompt, 'Sei un esperto di career coaching. Integra la nuova voce nel CV mantenendo tutto il resto invariato. Solo testo CV, nessun commento.')
-      const nomeName = `${selectedVersion.nome_versione} (aggiornato ${new Date().toLocaleDateString('it-IT')})`
-      await supabase.from('cv_versions').insert({ user_id: user.id, nome_versione: nomeName, testo: res })
+      for (const version of targets) {
+        const prompt = `Aggiungi questa nuova voce al CV nella sezione ${sezione}. Restituisci SOLO il CV completo aggiornato, senza commenti, mantenendo tutto il resto invariato.\n\nNuova voce: ${nuovoTesto}\n\nCV attuale:\n${version.testo}`
+        const res = await callAI(prompt, 'Sei un esperto di career coaching. Integra la nuova voce nel CV. Solo testo CV, nessun commento.')
+        await supabase.from('cv_versions').update({ testo: res }).eq('id', version.id)
+      }
       setAddMode(null)
       setAddData({})
-      setMessage({ type: 'success', text: 'Aggiunto e salvato come nuova versione!' })
+      setAddTargetId('all')
+      const msg = targets.length > 1 ? `Aggiornati ${targets.length} CV!` : 'CV aggiornato!'
+      setMessage({ type: 'success', text: msg })
       loadData()
     } catch (e) {
       setMessage({ type: 'error', text: 'Errore. Riprova.' })
@@ -354,11 +353,21 @@ ${selectedVersion.testo}`
       )}
 
       {/* Bottone crea CV */}
-      {!showForm && !editingVersion && (
-        <button onClick={() => setShowForm(true)}
-          className="w-full bg-green-600 text-white py-3 rounded-xl text-sm font-medium mb-5">
-          ✏️ Crea nuovo CV
-        </button>
+      {!showForm && !editingVersion && !addMode && (
+        <div className="flex gap-3 mb-5">
+          <button onClick={() => setShowForm(true)}
+            className="flex-1 py-3 rounded-xl text-sm font-medium text-white"
+            style={{background:'#16a34a'}}>
+            ✏️ Crea nuovo CV
+          </button>
+          {versions.length > 0 && (
+            <button onClick={() => { setAddMode('esperienza'); setAddData({}) }}
+              className="flex-1 py-3 rounded-xl text-sm font-medium"
+              style={{background:'linear-gradient(135deg, var(--violet), var(--accent))',color:'white'}}>
+              ➕ Aggiungi al CV
+            </button>
+          )}
+        </div>
       )}
 
       {/* Form */}
@@ -555,35 +564,34 @@ ${selectedVersion.testo}`
       )}
 
 
-      {/* Aggiungi al CV selezionato */}
-      {selectedVersion && !showForm && !editingVersion && !addMode && (
-        <div className="mb-4 flex gap-2 flex-wrap">
-          <button onClick={() => { setAddMode('esperienza'); setAddData({}) }}
-            className="px-4 py-2 rounded-xl text-sm font-medium"
-            style={{background:'var(--noir-card)',border:'1px solid var(--noir-border)',color:'var(--accent)'}}>
-            + Esperienza
-          </button>
-          <button onClick={() => { setAddMode('formazione'); setAddData({}) }}
-            className="px-4 py-2 rounded-xl text-sm font-medium"
-            style={{background:'var(--noir-card)',border:'1px solid var(--noir-border)',color:'var(--accent)'}}>
-            + Formazione
-          </button>
-          <button onClick={() => { setAddMode('lingua'); setAddData({}) }}
-            className="px-4 py-2 rounded-xl text-sm font-medium"
-            style={{background:'var(--noir-card)',border:'1px solid var(--noir-border)',color:'var(--accent)'}}>
-            + Lingua
-          </button>
-        </div>
-      )}
+
 
       {/* Mini form aggiungi */}
-      {addMode && selectedVersion && (
+      {addMode && (
         <div className="rounded-xl p-4 mb-4" style={{background:'var(--noir-card)',border:'1px solid var(--violet)'}}>
           <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-medium" style={{color:'var(--accent)'}}>
-              {addMode === 'esperienza' ? '+ Aggiungi esperienza' : addMode === 'formazione' ? '+ Aggiungi formazione' : '+ Aggiungi lingua'}
-            </div>
+            <div className="text-sm font-medium" style={{color:'var(--accent)'}}>➕ Aggiungi al CV</div>
             <button onClick={() => { setAddMode(null); setAddData({}) }} style={{color:'var(--text-muted)'}} className="text-xs">✕</button>
+          </div>
+          {/* Tipo */}
+          <div className="flex gap-2 mb-3">
+            {[['esperienza','Esperienza'],['formazione','Formazione'],['lingua','Lingua']].map(([m,l]) => (
+              <button key={m} onClick={() => { setAddMode(m); setAddData({}) }}
+                className="flex-1 py-1.5 rounded-lg text-xs font-medium"
+                style={{background: addMode===m ? 'var(--violet)' : 'var(--noir-mid)', color: addMode===m ? 'white' : 'var(--text-muted)', border:'1px solid var(--noir-border)'}}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {/* Selezione CV target */}
+          <div className="mb-3">
+            <label className="block text-xs mb-1" style={{color:'var(--text-muted)'}}>Aggiungi a</label>
+            <select value={addTargetId} onChange={e => setAddTargetId(e.target.value)}
+              className="w-full rounded-lg px-3 py-2 text-sm"
+              style={{background:'var(--noir-mid)',border:'1px solid var(--noir-border)',color:'var(--text-primary)'}}>
+              <option value="all">Tutti i CV</option>
+              {versions.map(v => <option key={v.id} value={v.id}>{v.nome_versione}</option>)}
+            </select>
           </div>
 
           {addMode === 'esperienza' && (
@@ -648,8 +656,9 @@ ${selectedVersion.testo}`
           <button onClick={addToCV} disabled={addingSaving}
             className="w-full mt-3 py-2.5 rounded-xl text-sm font-medium text-white disabled:opacity-50"
             style={{background:'linear-gradient(135deg, var(--violet), var(--accent))'}}>
-            {addingSaving ? '⏳ Salvataggio...' : '✓ Aggiungi e salva'}
+            {addingSaving ? '⏳ Aggiornamento...' : '✓ Aggiorna e sostituisci'}
           </button>
+          <p className="text-xs mt-1 text-center" style={{color:'var(--text-muted)'}}>Il CV verrà aggiornato e quello precedente eliminato</p>
         </div>
       )}
 
