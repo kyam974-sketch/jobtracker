@@ -22,6 +22,7 @@ export default function CVPage() {
   const [showForm, setShowForm] = useState(false)
   const [formData, setFormData] = useState(FORM_VUOTO)
   const [generatingFromForm, setGeneratingFromForm] = useState(false)
+  const [parsingCV, setParsingCV] = useState(false)
   const [selectedVersion, setSelectedVersion] = useState(null)
   const [showDetail, setShowDetail] = useState(false)
   const [editingVersion, setEditingVersion] = useState(null) // versione in modifica
@@ -130,7 +131,6 @@ ${formData.hobby ? '\nHOBBY E INTERESSI:\n' + formData.hobby : ''}`
       await supabase.from('cv_versions').insert({ user_id: user.id, nome_versione: nome, testo: res })
       await supabase.from('profiles').upsert({ user_id: user.id, cv_testo: res, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
       setShowForm(false)
-      setFormData(FORM_VUOTO)
       setMessage({ type: 'success', text: 'CV generato e salvato!' })
       loadData()
     } catch { setMessage({ type: 'error', text: 'Errore generazione. Riprova.' }) }
@@ -152,6 +152,41 @@ ${formData.hobby ? '\nHOBBY E INTERESSI:\n' + formData.hobby : ''}`
     setEditingTesto('')
     setMessage({ type: 'success', text: 'Modifiche salvate!' })
     loadData()
+  }
+
+
+  const parseVersionToForm = async (version) => {
+    setParsingCV(true)
+    try {
+      const prompt = 'Analizza questo CV e restituisci SOLO un JSON valido con questa struttura: {"nome":"","cognome":"","titolo":"","telefono":"","email":"","citta":"","patente":"","profilo":"","esperienze":[{"ruolo":"","azienda":"","periodo":"","punti":""}],"formazione":[{"titolo":"","istituto":"","anno":"","note":""}],"lingue":[{"lingua":"","livello":""}],"competenze":"","hobby":""}\n\nCV:\n' + version.testo
+      const result = await callAI(prompt, 'Sei un assistente che estrae dati strutturati da CV. Rispondi SOLO con JSON valido, senza markdown.')
+      const clean = result.replace(/```json|```/g, '').trim()
+      const start = clean.indexOf('{')
+      const end = clean.lastIndexOf('}')
+      if (start !== -1 && end !== -1) {
+        const parsed = JSON.parse(clean.substring(start, end + 1))
+        setFormData({
+          nome: parsed.nome || '',
+          cognome: parsed.cognome || '',
+          titolo: parsed.titolo || '',
+          telefono: parsed.telefono || '',
+          email: parsed.email || '',
+          citta: parsed.citta || '',
+          patente: parsed.patente || '',
+          profilo: parsed.profilo || '',
+          esperienze: parsed.esperienze?.length ? parsed.esperienze : [{ ruolo: '', azienda: '', periodo: '', punti: '' }],
+          formazione: parsed.formazione?.length ? parsed.formazione : [{ titolo: '', istituto: '', anno: '', note: '' }],
+          lingue: parsed.lingue?.length ? parsed.lingue : [{ lingua: '', livello: '' }],
+          competenze: parsed.competenze || '',
+          hobby: parsed.hobby || '',
+        })
+        setShowForm(true)
+      }
+    } catch (e) {
+      setMessage({ type: 'error', text: 'Errore nel parsing. Usa il form vuoto.' })
+      setShowForm(true)
+    }
+    setParsingCV(false)
   }
 
   const analyzeCV = async () => {
@@ -275,7 +310,7 @@ ${formData.hobby ? '\nHOBBY E INTERESSI:\n' + formData.hobby : ''}`
         <div className="bg-white rounded-xl border border-gray-200 p-4 mb-5">
           <div className="flex items-center justify-between mb-4">
             <div className="text-sm font-medium text-gray-700">Compila il CV</div>
-            <button onClick={() => { setShowForm(false); setFormData(FORM_VUOTO) }} className="text-gray-400 text-xs">✕ Annulla</button>
+            <button onClick={() => setShowForm(false)} className="text-gray-400 text-xs">✕ Annulla</button>
           </div>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
